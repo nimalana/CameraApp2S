@@ -256,6 +256,9 @@
 				DEVELOPMENT_TEAM = 2QJ4KU8957;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "So it has camera access";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "So it can add photos";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "So it has photo access";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -288,6 +291,9 @@
 				DEVELOPMENT_TEAM = 2QJ4KU8957;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "So it has camera access";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "So it can add photos";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "So it has photo access";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

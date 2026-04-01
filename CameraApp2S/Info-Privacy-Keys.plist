@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Camera Permission -->
+	<key>NSCameraUsageDescription</key>
+	<string>This app requires camera access to capture microscope images with enhanced quality and focus control.</string>
+	
+	<!-- Photo Library Permissions -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library to save and view microscope images.</string>
+	
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>This app needs permission to save captured microscope images to your photo library.</string>
+</dict>
+</plist>
