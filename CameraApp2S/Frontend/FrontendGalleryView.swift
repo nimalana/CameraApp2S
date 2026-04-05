@@ -6,18 +6,14 @@
 //
 
 import SwiftUI
-import Combine
 
 /// In-app camera roll for viewing captured microscope images
 struct GalleryView: View {
     @StateObject private var photoLibrary = PhotoLibraryManager.shared
     @Environment(\.dismiss) private var dismiss
     @State private var selectedPhoto: CapturedPhoto?
-    @State private var showingImageDetail = false
     
-    let columns = [
-        GridItem(.adaptive(minimum: 100), spacing: 2)
-    ]
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 1.5), count: 3)
     
     var body: some View {
         NavigationStack {
@@ -32,13 +28,11 @@ struct GalleryView: View {
                     )
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: columns, spacing: 2) {
+                        LazyVGrid(columns: columns, spacing: 1.5) {
                             ForEach(photoLibrary.photos) { photo in
                                 PhotoThumbnailView(photo: photo)
-                                    .aspectRatio(1, contentMode: .fill)
                                     .onTapGesture {
                                         selectedPhoto = photo
-                                        showingImageDetail = true
                                     }
                             }
                         }
@@ -54,10 +48,8 @@ struct GalleryView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingImageDetail) {
-                if let photo = selectedPhoto {
-                    ImageDetailView(photo: photo)
-                }
+            .sheet(item: $selectedPhoto) { photo in
+                ImageDetailView(photo: photo)
             }
             .task {
                 await photoLibrary.checkAuthorization()
@@ -76,11 +68,13 @@ struct PhotoThumbnailView: View {
     @State private var image: UIImage?
     
     var body: some View {
-        Group {
+        GeometryReader { geometry in
             if let image = image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
+                    .frame(width: geometry.size.width, height: geometry.size.width)
+                    .clipped()
             } else {
                 Rectangle()
                     .fill(.gray.opacity(0.3))
@@ -89,10 +83,11 @@ struct PhotoThumbnailView: View {
                     }
             }
         }
+        .aspectRatio(1, contentMode: .fit)
         .task {
             image = await PhotoLibraryManager.shared.loadImage(
                 for: photo,
-                targetSize: CGSize(width: 200, height: 200)
+                targetSize: CGSize(width: 300, height: 300)
             )
         }
     }

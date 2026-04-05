@@ -159,65 +159,135 @@ struct ImageDetailView: View {
 struct ImageViewer: View {
     let image: UIImage
     @Binding var scale: CGFloat
-    @State private var lastScale: CGFloat = 1.0
+    @State private var steadyScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
-    @State private var lastOffset: CGSize = .zero
+    @State private var steadyOffset: CGSize = .zero
     
     var body: some View {
         GeometryReader { geometry in
+            let imageSize = imageFitSize(in: geometry.size)
+            
             Image(uiImage: image)
                 .resizable()
                 .scaledToFit()
+                .frame(width: geometry.size.width, height: geometry.size.height)
                 .scaleEffect(scale)
                 .offset(offset)
-                .gesture(
-                    MagnificationGesture()
-                        .onChanged { value in
-                            let delta = value / lastScale
-                            lastScale = value
-                            scale *= delta
-                        }
-                        .onEnded { _ in
-                            lastScale = 1.0
-                            
-                            // Reset if zoomed out too far
-                            if scale < 1.0 {
-                                withAnimation {
-                                    scale = 1.0
-                                    offset = .zero
-                                }
-                            }
-                            
-                            // Limit maximum zoom
-                            if scale > 10.0 {
-                                scale = 10.0
-                            }
-                        }
-                )
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            offset = CGSize(
-                                width: lastOffset.width + value.translation.width,
-                                height: lastOffset.height + value.translation.height
-                            )
-                        }
-                        .onEnded { _ in
-                            lastOffset = offset
-                        }
-                )
+                .gesture(pinchGesture(imageSize: imageSize, viewSize: geometry.size))
+                .simultaneousGesture(dragGesture(imageSize: imageSize, viewSize: geometry.size))
                 .onTapGesture(count: 2) {
-                    withAnimation {
+                    withAnimation(.easeInOut(duration: 0.25)) {
                         if scale > 1.0 {
                             scale = 1.0
+                            steadyScale = 1.0
                             offset = .zero
-                            lastOffset = .zero
+                            steadyOffset = .zero
                         } else {
-                            scale = 2.0
+                            scale = 2.5
+                            steadyScale = 2.5
                         }
                     }
                 }
         }
+    }
+    
+    // MARK: - Gestures
+    
+    private func pinchGesture(imageSize: CGSize, viewSize: CGSize) -> some Gesture {
+        MagnificationGesture()
+            .onChanged { value in
+                let newScale = steadyScale * value
+                scale = min(max(newScale, 0.5), 10.0)
+            }
+            .onEnded { value in
+                var finalScale = steadyScale * value
+                
+                if finalScale < 1.0 {
+                    finalScale = 1.0
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        offset = .zero
+                        steadyOffset = .zero
+                    }
+                } else if finalScale > 10.0 {
+                    finalScale = 10.0
+                }
+                
+                withAnimation(.easeOut(duration: 0.2)) {
+                    scale = finalScale
+                }
+                steadyScale = finalScale
+                
+                // Clamp offset after zoom change
+                let clamped = clampedOffset(offset, scale: finalScale, imageSize: imageSize, viewSize: viewSize)
+                if clamped != offset {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        offset = clamped
+                    }
+                    steadyOffset = clamped
+                }
+            }
+    }
+    
+    private func dragGesture(imageSize: CGSize, viewSize: CGSize) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                guard scale > 1.0 else { return }
+                offset = CGSize(
+                    width: steadyOffset.width + value.translation.width,
+                    height: steadyOffset.height + value.translation.height
+                )
+            }
+            .onEnded { value in
+                guard scale > 1.0 else {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        offset = .zero
+                    }
+                    steadyOffset = .zero
+                    return
+                }
+                
+                let proposed = CGSize(
+                    width: steadyOffset.width + value.translation.width,
+                    height: steadyOffset.height + value.translation.height
+                )
+                let clamped = clampedOffset(proposed, scale: scale, imageSize: imageSize, viewSize: viewSize)
+                withAnimation(.easeOut(duration: 0.2)) {
+                    offset = clamped
+                }
+                steadyOffset = clamped
+            }
+    }
+    
+    // MARK: - Layout Helpers
+    
+    /// Calculate the size the image occupies when fitted inside the view
+    private func imageFitSize(in viewSize: CGSize) -> CGSize {
+        let imageAspect = image.size.width / image.size.height
+        let viewAspect = viewSize.width / viewSize.height
+        
+        if imageAspect > viewAspect {
+            let width = viewSize.width
+            let height = width / imageAspect
+            return CGSize(width: width, height: height)
+        } else {
+            let height = viewSize.height
+            let width = height * imageAspect
+            return CGSize(width: width, height: height)
+        }
+    }
+    
+    /// Clamp offset so the image edges don't pull away from the view edges
+    private func clampedOffset(_ proposed: CGSize, scale: CGFloat, imageSize: CGSize, viewSize: CGSize) -> CGSize {
+        let scaledWidth = imageSize.width * scale
+        let scaledHeight = imageSize.height * scale
+        
+        let maxX = max((scaledWidth - viewSize.width) / 2, 0)
+        let maxY = max((scaledHeight - viewSize.height) / 2, 0)
+        
+        return CGSize(
+            width: min(max(proposed.width, -maxX), maxX),
+            height: min(max(proposed.height, -maxY), maxY)
+        )
     }
 }
 

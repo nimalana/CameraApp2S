@@ -7,7 +7,6 @@
 
 import SwiftUI
 import AVFoundation
-import Combine
 
 /// Main camera interface for microscope imaging
 struct CameraView: View {
@@ -15,6 +14,7 @@ struct CameraView: View {
     @State private var showingSettings = false
     @State private var showingGallery = false
     @State private var selectedZoom: CGFloat = 1.0
+    @State private var lastPhotoThumbnail: UIImage?
     
     var body: some View {
         ZStack {
@@ -33,10 +33,13 @@ struct CameraView: View {
             VStack {
                 // Top Bar
                 HStack {
+                    // Camera switch button
                     Button {
-                        showingGallery = true
+                        Task {
+                            await cameraManager.switchCamera()
+                        }
                     } label: {
-                        Image(systemName: "photo.stack")
+                        Image(systemName: "camera.rotate.fill")
                             .font(.title2)
                             .foregroundStyle(.white)
                             .padding()
@@ -49,7 +52,7 @@ struct CameraView: View {
                     if cameraManager.isLocked {
                         HStack {
                             Image(systemName: "lock.fill")
-                            Text("Locked")
+                            Text("AE/AF Locked")
                         }
                         .font(.caption)
                         .foregroundStyle(.yellow)
@@ -102,25 +105,30 @@ struct CameraView: View {
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                     
                     // Main Action Buttons
-                    HStack(spacing: 40) {
-                        // Lock/Unlock Button
+                    HStack {
+                        // Gallery thumbnail
                         Button {
-                            if cameraManager.isLocked {
-                                cameraManager.unlockFocus()
-                            } else {
-                                cameraManager.lockFocus()
-                            }
+                            showingGallery = true
                         } label: {
-                            VStack {
-                                Image(systemName: cameraManager.isLocked ? "lock.fill" : "lock.open.fill")
+                            if let thumbnail = lastPhotoThumbnail {
+                                Image(uiImage: thumbnail)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 50, height: 50)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(.white, lineWidth: 2)
+                                    )
+                            } else {
+                                Image(systemName: "photo.on.rectangle")
                                     .font(.title2)
-                                Text(cameraManager.isLocked ? "Unlock" : "Lock")
-                                    .font(.caption)
+                                    .foregroundStyle(.white)
+                                    .frame(width: 50, height: 50)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
                             }
-                            .foregroundStyle(cameraManager.isLocked ? .yellow : .white)
-                            .frame(width: 70, height: 70)
-                            .background(.ultraThinMaterial, in: Circle())
                         }
+                        .frame(maxWidth: .infinity)
                         
                         // Capture Button
                         Button {
@@ -136,22 +144,29 @@ struct CameraView: View {
                                     .frame(width: 80, height: 80)
                             }
                         }
+                        .frame(maxWidth: .infinity)
                         
-                        // Focus Mode Toggle
+                        // Lock/Unlock Button
                         Button {
-                            toggleFocusMode()
-                        } label: {
-                            VStack {
-                                Image(systemName: focusModeIcon)
-                                    .font(.title2)
-                                Text(focusModeText)
-                                    .font(.caption)
+                            if cameraManager.isLocked {
+                                cameraManager.unlockFocus()
+                            } else {
+                                cameraManager.lockFocus()
                             }
-                            .foregroundStyle(.white)
-                            .frame(width: 70, height: 70)
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: cameraManager.isLocked ? "lock.fill" : "lock.open.fill")
+                                    .font(.title2)
+                                Text(cameraManager.isLocked ? "Unlock" : "Lock")
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(cameraManager.isLocked ? .yellow : .white)
+                            .frame(width: 50, height: 50)
                             .background(.ultraThinMaterial, in: Circle())
                         }
+                        .frame(maxWidth: .infinity)
                     }
+                    .padding(.horizontal)
                     .padding(.bottom, 30)
                 }
             }
@@ -168,42 +183,30 @@ struct CameraView: View {
                 await cameraManager.setupCamera()
                 cameraManager.startSession()
             }
+            await loadLatestThumbnail()
+        }
+        .onChange(of: cameraManager.capturedImage) { _, newImage in
+            // Use the captured image directly as thumbnail for instant update
+            if let newImage {
+                lastPhotoThumbnail = newImage
+            }
+        }
+        .onChange(of: showingGallery) { _, isShowing in
+            // Refresh thumbnail when gallery is dismissed (photo may have been deleted)
+            if !isShowing {
+                Task {
+                    await loadLatestThumbnail()
+                }
+            }
         }
         .onDisappear {
             cameraManager.stopSession()
         }
     }
     
-    private var focusModeIcon: String {
-        switch cameraManager.focusMode {
-        case .continuousAutoFocus:
-            return "circle.hexagongrid.fill"
-        case .autoFocus:
-            return "scope"
-        case .locked:
-            return "scope"
-        @unknown default:
-            return "circle.hexagongrid.fill"
-        }
-    }
-    
-    private var focusModeText: String {
-        switch cameraManager.focusMode {
-        case .continuousAutoFocus:
-            return "Auto"
-        case .autoFocus, .locked:
-            return "Manual"
-        @unknown default:
-            return "Auto"
-        }
-    }
-    
-    private func toggleFocusMode() {
-        if cameraManager.focusMode == .continuousAutoFocus {
-            cameraManager.setFocusMode(.autoFocus)
-        } else {
-            cameraManager.setFocusMode(.continuousAutoFocus)
-        }
+    private func loadLatestThumbnail() async {
+        await PhotoLibraryManager.shared.checkAuthorization()
+        lastPhotoThumbnail = await PhotoLibraryManager.shared.loadLatestPhotoThumbnail()
     }
 }
 

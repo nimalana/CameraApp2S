@@ -87,15 +87,20 @@ class PhotoLibraryManager: ObservableObject {
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
         options.isNetworkAccessAllowed = true
-        options.isSynchronous = true
+        options.isSynchronous = false
         
         return await withCheckedContinuation { continuation in
+            var hasResumed = false
             PHImageManager.default().requestImage(
                 for: photo.asset,
                 targetSize: targetSize,
                 contentMode: .aspectFill,
                 options: options
-            ) { image, _ in
+            ) { image, info in
+                // Guard against multiple callbacks (degraded + final)
+                let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+                guard !hasResumed, !isDegraded else { return }
+                hasResumed = true
                 continuation.resume(returning: image)
             }
         }
@@ -105,15 +110,52 @@ class PhotoLibraryManager: ObservableObject {
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
         options.isNetworkAccessAllowed = true
-        options.isSynchronous = true
+        options.isSynchronous = false
         
         return await withCheckedContinuation { continuation in
+            var hasResumed = false
             PHImageManager.default().requestImage(
                 for: photo.asset,
                 targetSize: PHImageManagerMaximumSize,
                 contentMode: .aspectFit,
                 options: options
-            ) { image, _ in
+            ) { image, info in
+                let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+                guard !hasResumed, !isDegraded else { return }
+                hasResumed = true
+                continuation.resume(returning: image)
+            }
+        }
+    }
+    
+    // MARK: - Latest Photo Thumbnail
+    
+    func loadLatestPhotoThumbnail(targetSize: CGSize = CGSize(width: 100, height: 100)) async -> UIImage? {
+        guard isAuthorized else { return nil }
+        
+        let fetchOptions = PHFetchOptions()
+        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        fetchOptions.fetchLimit = 1
+        
+        let result = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+        guard let asset = result.firstObject else { return nil }
+        
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+        options.isSynchronous = false
+        
+        return await withCheckedContinuation { continuation in
+            var hasResumed = false
+            PHImageManager.default().requestImage(
+                for: asset,
+                targetSize: targetSize,
+                contentMode: .aspectFill,
+                options: options
+            ) { image, info in
+                let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+                guard !hasResumed, !isDegraded else { return }
+                hasResumed = true
                 continuation.resume(returning: image)
             }
         }
