@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AVFoundation
+import Combine
 
 /// Main camera interface for microscope imaging
 struct CameraView: View {

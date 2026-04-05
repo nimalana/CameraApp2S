@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AVFoundation
+import Combine
 
 /// Settings panel for camera configuration
 @MainActor

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 /// In-app camera roll for viewing captured microscope images
 struct GalleryView: View {
