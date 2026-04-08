@@ -13,20 +13,58 @@ struct CameraView: View {
     @StateObject private var cameraManager = CameraManager()
     @State private var showingSettings = false
     @State private var showingGallery = false
-    @State private var selectedZoom: CGFloat = 1.0
     @State private var lastPhotoThumbnail: UIImage?
+    @State private var showZoomIndicator = false
     
     var body: some View {
         ZStack {
             // Camera Preview
             if cameraManager.isCameraReady {
-                CameraPreviewView(session: cameraManager.getCaptureSession()) { point in
-                    cameraManager.setFocusPoint(point)
-                }
+                CameraPreviewView(
+                    session: cameraManager.getCaptureSession(),
+                    onTap: { point in
+                        cameraManager.setFocusPoint(point)
+                    },
+                    onPinchZoom: { delta in
+                        cameraManager.adjustZoom(by: delta)
+                        showZoomIndicator = true
+                    }
+                )
                 .ignoresSafeArea()
+            } else if !cameraManager.isAuthorized && !cameraManager.isCameraReady {
+                // Permission denied state
+                Color.black
+                    .ignoresSafeArea()
+                    .overlay {
+                        VStack(spacing: 16) {
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 48))
+                                .foregroundStyle(.gray)
+                            Text("Camera Access Required")
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.white)
+                            Text("Allow camera access in Settings to capture microscope images.")
+                                .font(.subheadline)
+                                .foregroundStyle(.gray)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 40)
+                            Button("Open Settings") {
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    UIApplication.shared.open(url)
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .padding(.top, 8)
+                        }
+                    }
             } else {
                 Color.black
                     .ignoresSafeArea()
+                    .overlay {
+                        ProgressView()
+                            .tint(.white)
+                    }
             }
             
             // Camera Controls Overlay
@@ -45,6 +83,8 @@ struct CameraView: View {
                             .padding()
                             .background(.ultraThinMaterial, in: Circle())
                     }
+                    .accessibilityLabel("Switch camera")
+                    .accessibilityHint("Switches between front and rear camera")
                     
                     Spacer()
                     
@@ -58,6 +98,7 @@ struct CameraView: View {
                         .foregroundStyle(.yellow)
                         .padding(8)
                         .background(.ultraThinMaterial, in: Capsule())
+                        .accessibilityLabel("Auto-exposure and auto-focus locked")
                     }
                     
                     Spacer()
@@ -71,6 +112,7 @@ struct CameraView: View {
                             .padding()
                             .background(.ultraThinMaterial, in: Circle())
                     }
+                    .accessibilityLabel("Settings")
                 }
                 .padding()
                 
@@ -78,31 +120,18 @@ struct CameraView: View {
                 
                 // Bottom Controls
                 VStack(spacing: 20) {
-                    // Zoom Control
-                    VStack(spacing: 8) {
-                        Text("Zoom: \(String(format: "%.1fx", selectedZoom))")
-                            .font(.caption)
+                    // Zoom indicator (appears during pinch)
+                    if showZoomIndicator {
+                        Text("\(String(format: "%.1f", cameraManager.currentZoomFactor))×")
+                            .font(.title2)
+                            .fontWeight(.semibold)
                             .foregroundStyle(.white)
-                        
-                        HStack {
-                            Text("1×")
-                                .font(.caption2)
-                                .foregroundStyle(.white)
-                            
-                            Slider(value: $selectedZoom, in: 1.0...cameraManager.maxZoomFactor)
-                                .tint(.yellow)
-                                .onChange(of: selectedZoom) { _, newValue in
-                                    cameraManager.setZoom(newValue)
-                                }
-                            
-                            Text("\(Int(cameraManager.maxZoomFactor))×")
-                                .font(.caption2)
-                                .foregroundStyle(.white)
-                        }
-                        .frame(maxWidth: 300)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .transition(.opacity)
+                            .accessibilityLabel("Zoom \(String(format: "%.1f", cameraManager.currentZoomFactor)) times")
                     }
-                    .padding()
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                     
                     // Main Action Buttons
                     HStack {
@@ -128,10 +157,14 @@ struct CameraView: View {
                                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
                             }
                         }
+                        .accessibilityLabel("Photo gallery")
+                        .accessibilityHint("Opens the photo gallery")
                         .frame(maxWidth: .infinity)
                         
                         // Capture Button
                         Button {
+                            let generator = UIImpactFeedbackGenerator(style: .medium)
+                            generator.impactOccurred()
                             cameraManager.capturePhoto()
                         } label: {
                             ZStack {
@@ -144,6 +177,8 @@ struct CameraView: View {
                                     .frame(width: 80, height: 80)
                             }
                         }
+                        .accessibilityLabel("Capture photo")
+                        .accessibilityHint("Takes a photo")
                         .frame(maxWidth: .infinity)
                         
                         // Lock/Unlock Button
@@ -164,6 +199,8 @@ struct CameraView: View {
                             .frame(width: 50, height: 50)
                             .background(.ultraThinMaterial, in: Circle())
                         }
+                        .accessibilityLabel(cameraManager.isLocked ? "Unlock focus and exposure" : "Lock focus and exposure")
+                        .accessibilityHint(cameraManager.isLocked ? "Resumes auto-focus and auto-exposure" : "Locks current focus and exposure settings")
                         .frame(maxWidth: .infinity)
                     }
                     .padding(.horizontal)
@@ -201,6 +238,32 @@ struct CameraView: View {
         }
         .onDisappear {
             cameraManager.stopSession()
+        }
+        .onChange(of: cameraManager.currentZoomFactor) { _, _ in
+            showZoomIndicator = true
+            // Auto-hide after a brief pause
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                withAnimation {
+                    showZoomIndicator = false
+                }
+            }
+        }
+        .alert("Error", isPresented: Binding(
+            get: { cameraManager.errorMessage != nil },
+            set: { if !$0 { cameraManager.errorMessage = nil } }
+        )) {
+            Button("OK") { cameraManager.errorMessage = nil }
+        } message: {
+            Text(cameraManager.errorMessage ?? "")
+        }
+        .alert("Error", isPresented: Binding(
+            get: { PhotoLibraryManager.shared.errorMessage != nil },
+            set: { if !$0 { PhotoLibraryManager.shared.errorMessage = nil } }
+        )) {
+            Button("OK") { PhotoLibraryManager.shared.errorMessage = nil }
+        } message: {
+            Text(PhotoLibraryManager.shared.errorMessage ?? "")
         }
     }
     

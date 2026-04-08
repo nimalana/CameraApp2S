@@ -8,6 +8,8 @@
 
 /* Begin PBXFileReference section */
 		C4DB656F2F6766D100BCFC8A /* CameraApp2S.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CameraApp2S.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C4F8ACF12F832557008B04EF /* ImageEnhancementManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEnhancementManagerTests.swift; sourceTree = "<group>"; };
+		C4F8ACF22F832560008B04EF /* CameraManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraManagerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -34,6 +36,7 @@
 			children = (
 				C4DB65712F6766D100BCFC8A /* CameraApp2S */,
 				C4DB65702F6766D100BCFC8A /* Products */,
+				C4F8ACF02F832546008B04EF /* CameraApp2STests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -43,6 +46,15 @@
 				C4DB656F2F6766D100BCFC8A /* CameraApp2S.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		C4F8ACF02F832546008B04EF /* CameraApp2STests */ = {
+			isa = PBXGroup;
+			children = (
+				C4F8ACF12F832557008B04EF /* ImageEnhancementManagerTests.swift */,
+				C4F8ACF22F832560008B04EF /* CameraManagerTests.swift */,
+			);
+			path = CameraApp2STests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

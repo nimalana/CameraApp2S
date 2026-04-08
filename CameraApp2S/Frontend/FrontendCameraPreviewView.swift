@@ -12,11 +12,13 @@ import AVFoundation
 struct CameraPreviewView: UIViewRepresentable {
     let session: AVCaptureSession
     let onTap: (CGPoint) -> Void
+    let onPinchZoom: (CGFloat) -> Void
     
     func makeUIView(context: Context) -> CameraPreviewUIView {
         let view = CameraPreviewUIView()
         view.session = session
         view.onTap = onTap
+        view.onPinchZoom = onPinchZoom
         return view
     }
     
@@ -34,6 +36,10 @@ class CameraPreviewUIView: UIView {
     }
     
     var onTap: ((CGPoint) -> Void)?
+    var onPinchZoom: ((CGFloat) -> Void)?
+    
+    /// Tracks the zoom factor at the start of a pinch gesture
+    private var initialPinchZoom: CGFloat = 1.0
     
     override class var layerClass: AnyClass {
         AVCaptureVideoPreviewLayer.self
@@ -59,6 +65,10 @@ class CameraPreviewUIView: UIView {
         // Add tap gesture recognizer for focus/exposure
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         addGestureRecognizer(tapGesture)
+        
+        // Add pinch gesture recognizer for zoom
+        let pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+        addGestureRecognizer(pinchGesture)
     }
     
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
@@ -71,6 +81,20 @@ class CameraPreviewUIView: UIView {
         
         // Show focus indicator
         showFocusIndicator(at: location)
+    }
+    
+    @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+        switch gesture.state {
+        case .began:
+            initialPinchZoom = gesture.scale
+        case .changed:
+            // The scale relative to the start of this gesture
+            let zoomDelta = gesture.scale / initialPinchZoom
+            initialPinchZoom = gesture.scale
+            onPinchZoom?(zoomDelta)
+        default:
+            break
+        }
     }
     
     private func showFocusIndicator(at point: CGPoint) {

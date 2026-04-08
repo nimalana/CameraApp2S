@@ -34,6 +34,9 @@ struct GalleryView: View {
                                     .onTapGesture {
                                         selectedPhoto = photo
                                     }
+                                    .accessibilityLabel("Photo taken \(photo.creationDate?.formatted(date: .abbreviated, time: .shortened) ?? "unknown date")")
+                                    .accessibilityHint("Opens full-size image")
+                                    .accessibilityAddTraits(.isButton)
                             }
                         }
                     }

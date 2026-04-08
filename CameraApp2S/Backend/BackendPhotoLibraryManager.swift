@@ -18,6 +18,7 @@ class PhotoLibraryManager: ObservableObject {
     @Published var isAuthorized = false
     @Published var photos: [CapturedPhoto] = []
     @Published var isLoading = false
+    @Published var errorMessage: String?
     
     private var allPhotos: PHFetchResult<PHAsset>?
     
@@ -51,7 +52,7 @@ class PhotoLibraryManager: ObservableObject {
             // Reload photos after saving
             await loadPhotos()
         } catch {
-            print("Error saving image to photo library: \(error.localizedDescription)")
+            errorMessage = "Failed to save photo: \(error.localizedDescription)"
         }
     }
     
@@ -172,7 +173,7 @@ class PhotoLibraryManager: ObservableObject {
             // Remove from local array
             photos.removeAll { $0.id == photo.id }
         } catch {
-            print("Error deleting photo: \(error.localizedDescription)")
+            errorMessage = "Failed to delete photo: \(error.localizedDescription)"
         }
     }
 }

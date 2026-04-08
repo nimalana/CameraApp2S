@@ -5,7 +5,7 @@
 //  Created by Nimalan Arulvelan on 3/15/26.
 //
 
-import AVFoundation
+@preconcurrency import AVFoundation
 import UIKit
 import SwiftUI
 import Combine
@@ -24,29 +24,73 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var capturedImage: UIImage?
     @Published var isUsingFrontCamera = false
     @Published var availableCameras: [AVCaptureDevice] = []
+    @Published var errorMessage: String?
     
-    // Camera components
-    private let captureSession = AVCaptureSession()
-    private var videoDeviceInput: AVCaptureDeviceInput?
-    private var photoOutput: AVCapturePhotoOutput?
-    private var videoDevice: AVCaptureDevice?
+    // Camera components – accessed on sessionQueue; nonisolated(unsafe) silences
+    // main-actor isolation warnings since we manage thread safety via sessionQueue.
+    nonisolated(unsafe) private let captureSession = AVCaptureSession()
+    nonisolated(unsafe) private var videoDeviceInput: AVCaptureDeviceInput?
+    nonisolated(unsafe) private var photoOutput: AVCapturePhotoOutput?
+    nonisolated(unsafe) private var videoDevice: AVCaptureDevice?
     
     // Session queue for async camera operations
     private let sessionQueue = DispatchQueue(label: "com.cameraapp.sessionqueue")
+    
+    // KVO observations for autofocus/autoexposure completion
+    private var focusObservation: NSKeyValueObservation?
+    private var exposureObservation: NSKeyValueObservation?
     
     override init() {
         super.init()
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(subjectAreaDidChange),
-            name: .AVCaptureDeviceSubjectAreaDidChange,
+            name: AVCaptureDevice.subjectAreaDidChangeNotification,
             object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(sessionWasInterrupted),
+            name: AVCaptureSession.wasInterruptedNotification,
+            object: captureSession
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(sessionInterruptionEnded),
+            name: AVCaptureSession.interruptionEndedNotification,
+            object: captureSession
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(sessionRuntimeError),
+            name: AVCaptureSession.runtimeErrorNotification,
+            object: captureSession
         )
     }
     
     @objc nonisolated private func subjectAreaDidChange(_ notification: Notification) {
         Task { @MainActor in
             resumeContinuousAutoFocus()
+        }
+    }
+    
+    @objc nonisolated private func sessionWasInterrupted(_ notification: Notification) {
+        Task { @MainActor in
+            self.isCameraReady = false
+        }
+    }
+    
+    @objc nonisolated private func sessionInterruptionEnded(_ notification: Notification) {
+        Task { @MainActor in
+            self.isCameraReady = true
+        }
+    }
+    
+    @objc nonisolated private func sessionRuntimeError(_ notification: Notification) {
+        // Attempt to restart the session on runtime errors
+        let session = captureSession
+        sessionQueue.async {
+            session.startRunning()
         }
     }
     
@@ -84,39 +128,39 @@ final class CameraManager: NSObject, ObservableObject {
         
         await withCheckedContinuation { continuation in
             sessionQueue.async { [weak self] in
-                guard let self = self else {
+                guard let strongSelf = self else {
                     continuation.resume()
                     return
                 }
                 
-                self.captureSession.beginConfiguration()
+                strongSelf.captureSession.beginConfiguration()
                 
                 // Remove existing input
-                if let existingInput = self.videoDeviceInput {
-                    self.captureSession.removeInput(existingInput)
+                if let existingInput = strongSelf.videoDeviceInput {
+                    strongSelf.captureSession.removeInput(existingInput)
                 }
                 
                 // Configure for high-quality photo capture
-                self.captureSession.sessionPreset = .photo
+                strongSelf.captureSession.sessionPreset = .photo
                 
-                self.videoDevice = videoDevice
+                strongSelf.videoDevice = videoDevice
                 
                 do {
                     let videoDeviceInput = try AVCaptureDeviceInput(device: videoDevice)
                     
-                    if self.captureSession.canAddInput(videoDeviceInput) {
-                        self.captureSession.addInput(videoDeviceInput)
-                        self.videoDeviceInput = videoDeviceInput
+                    if strongSelf.captureSession.canAddInput(videoDeviceInput) {
+                        strongSelf.captureSession.addInput(videoDeviceInput)
+                        strongSelf.videoDeviceInput = videoDeviceInput
                     }
                     
                     // Only add photo output if not already added
-                    if self.photoOutput == nil {
+                    if strongSelf.photoOutput == nil {
                         let photoOutput = AVCapturePhotoOutput()
                         photoOutput.maxPhotoQualityPrioritization = .quality
                         
-                        if self.captureSession.canAddOutput(photoOutput) {
-                            self.captureSession.addOutput(photoOutput)
-                            self.photoOutput = photoOutput
+                        if strongSelf.captureSession.canAddOutput(photoOutput) {
+                            strongSelf.captureSession.addOutput(photoOutput)
+                            strongSelf.photoOutput = photoOutput
                         }
                     }
                     
@@ -133,39 +177,23 @@ final class CameraManager: NSObject, ObservableObject {
                     
                     videoDevice.unlockForConfiguration()
                     
-                    self.captureSession.commitConfiguration()
+                    strongSelf.captureSession.commitConfiguration()
                     
-                    Task { @MainActor in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
                         self.maxZoomFactor = min(videoDevice.activeFormat.videoMaxZoomFactor, 10.0)
                         self.currentZoomFactor = 1.0
                         self.isCameraReady = true
                         self.isUsingFrontCamera = videoDevice.position == .front
-                    }
-                    
-                    // Brief delay to let autofocus acquire, then lock AE/AF
-                    Thread.sleep(forTimeInterval: 0.6)
-                    
-                    do {
-                        try videoDevice.lockForConfiguration()
-                        if videoDevice.isFocusModeSupported(.locked) {
-                            videoDevice.focusMode = .locked
-                        }
-                        if videoDevice.isExposureModeSupported(.locked) {
-                            videoDevice.exposureMode = .locked
-                        }
-                        videoDevice.unlockForConfiguration()
-                        
-                        Task { @MainActor in
-                            self.isLocked = true
-                            self.focusMode = .locked
-                        }
-                    } catch {
-                        print("Error locking AE/AF: \(error.localizedDescription)")
+                        // Lock AE/AF once autofocus finishes acquiring
+                        self.observeAndLockWhenReady(device: videoDevice)
                     }
                     
                 } catch {
-                    print("Error setting up camera: \(error.localizedDescription)")
-                    self.captureSession.commitConfiguration()
+                    strongSelf.captureSession.commitConfiguration()
+                    Task { @MainActor [weak self] in
+                        self?.errorMessage = "Failed to set up camera: \(error.localizedDescription)"
+                    }
                 }
                 
                 continuation.resume()
@@ -181,22 +209,63 @@ final class CameraManager: NSObject, ObservableObject {
         await configureSession(with: newDevice)
     }
     
+    /// Observe autofocus/autoexposure completion via KVO, then lock AE/AF
+    private func observeAndLockWhenReady(device: AVCaptureDevice) {
+        // Cancel any existing observations
+        focusObservation?.invalidate()
+        exposureObservation?.invalidate()
+        
+        // Track whether both focus and exposure have settled
+        var focusSettled = !device.isAdjustingFocus
+        var exposureSettled = !device.isAdjustingExposure
+        
+        let tryLock: () -> Void = { [weak self] in
+            guard focusSettled, exposureSettled else { return }
+            self?.focusObservation?.invalidate()
+            self?.exposureObservation?.invalidate()
+            self?.lockFocus()
+        }
+        
+        if focusSettled && exposureSettled {
+            lockFocus()
+            return
+        }
+        
+        focusObservation = device.observe(\.isAdjustingFocus, options: [.new]) { _, change in
+            if change.newValue == false {
+                focusSettled = true
+                Task { @MainActor in
+                    tryLock()
+                }
+            }
+        }
+        
+        exposureObservation = device.observe(\.isAdjustingExposure, options: [.new]) { _, change in
+            if change.newValue == false {
+                exposureSettled = true
+                Task { @MainActor in
+                    tryLock()
+                }
+            }
+        }
+    }
+    
     // MARK: - Session Control
     
     func startSession() {
         sessionQueue.async { [weak self] in
-            guard let self = self else { return }
-            if !self.captureSession.isRunning {
-                self.captureSession.startRunning()
+            guard let strongSelf = self else { return }
+            if !strongSelf.captureSession.isRunning {
+                strongSelf.captureSession.startRunning()
             }
         }
     }
     
     func stopSession() {
         sessionQueue.async { [weak self] in
-            guard let self = self else { return }
-            if self.captureSession.isRunning {
-                self.captureSession.stopRunning()
+            guard let strongSelf = self else { return }
+            if strongSelf.captureSession.isRunning {
+                strongSelf.captureSession.stopRunning()
             }
         }
     }
@@ -211,12 +280,13 @@ final class CameraManager: NSObject, ObservableObject {
         guard let device = videoDevice else { return }
         
         sessionQueue.async { [weak self] in
+            guard let self else { return }
             do {
                 try device.lockForConfiguration()
                 
                 if device.isFocusModeSupported(mode) {
                     device.focusMode = mode
-                    Task { @MainActor in
+                    Task { @MainActor [weak self] in
                         self?.focusMode = mode
                     }
                 }
@@ -250,7 +320,7 @@ final class CameraManager: NSObject, ObservableObject {
                 
                 device.unlockForConfiguration()
                 
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     self?.focusMode = .autoFocus
                 }
             } catch {
@@ -277,7 +347,7 @@ final class CameraManager: NSObject, ObservableObject {
                 
                 device.unlockForConfiguration()
                 
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     self?.focusMode = .continuousAutoFocus
                 }
             } catch {
@@ -304,7 +374,7 @@ final class CameraManager: NSObject, ObservableObject {
                 device.isSubjectAreaChangeMonitoringEnabled = false
                 device.unlockForConfiguration()
                 
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     self?.isLocked = true
                     self?.focusMode = .locked
                 }
@@ -331,7 +401,7 @@ final class CameraManager: NSObject, ObservableObject {
                 
                 device.unlockForConfiguration()
                 
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     self?.isLocked = false
                     self?.focusMode = .continuousAutoFocus
                 }
@@ -354,7 +424,7 @@ final class CameraManager: NSObject, ObservableObject {
                 device.videoZoomFactor = zoomFactor
                 device.unlockForConfiguration()
                 
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     self?.currentZoomFactor = zoomFactor
                 }
             } catch {
@@ -363,23 +433,30 @@ final class CameraManager: NSObject, ObservableObject {
         }
     }
     
+    /// Adjusts zoom by multiplying the current factor by a delta (used for pinch-to-zoom)
+    func adjustZoom(by delta: CGFloat) {
+        let newZoom = currentZoomFactor * delta
+        setZoom(newZoom)
+    }
+    
     // MARK: - Photo Capture
     
     func capturePhoto() {
         guard let photoOutput = photoOutput else { return }
         
+        let output = photoOutput // local copy to avoid capturing nonisolated(unsafe) property
         sessionQueue.async { [weak self] in
             var photoSettings = AVCapturePhotoSettings()
             
             // Use highest quality settings for microscope imaging
-            if photoOutput.availablePhotoCodecTypes.contains(.hevc) {
+            if output.availablePhotoCodecTypes.contains(.hevc) {
                 photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
             }
             
             photoSettings.photoQualityPrioritization = .quality
             
-            if let self = self {
-                photoOutput.capturePhoto(with: photoSettings, delegate: self)
+            if let strongSelf = self {
+                output.capturePhoto(with: photoSettings, delegate: strongSelf)
             }
         }
     }
@@ -389,14 +466,18 @@ final class CameraManager: NSObject, ObservableObject {
 
 extension CameraManager: AVCapturePhotoCaptureDelegate {
     nonisolated func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        guard error == nil else {
-            print("Error capturing photo: \(error!.localizedDescription)")
+        if let error {
+            Task { @MainActor in
+                self.errorMessage = "Failed to capture photo: \(error.localizedDescription)"
+            }
             return
         }
         
         guard let imageData = photo.fileDataRepresentation(),
               let image = UIImage(data: imageData) else {
-            print("Unable to create image from photo data")
+            Task { @MainActor in
+                self.errorMessage = "Unable to process captured photo"
+            }
             return
         }
         

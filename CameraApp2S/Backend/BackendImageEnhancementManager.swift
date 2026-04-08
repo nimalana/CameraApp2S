@@ -155,7 +155,7 @@ class ImageEnhancementManager {
     
     // MARK: - Helper Methods
     
-    private func convertToUIImage(_ ciImage: CIImage) -> UIImage? {
+    nonisolated private func convertToUIImage(_ ciImage: CIImage) -> UIImage? {
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
             return nil
         }

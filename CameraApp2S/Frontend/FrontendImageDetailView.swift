@@ -26,6 +26,8 @@ struct ImageDetailView: View {
                 
                 if let displayImage = enhancedImage ?? fullResImage {
                     ImageViewer(image: displayImage, scale: $currentScale)
+                        .accessibilityLabel(enhancedImage != nil ? "Enhanced microscope image" : "Microscope image")
+                        .accessibilityHint("Double tap to zoom in or out")
                 } else {
                     ProgressView("Loading image...")
                         .foregroundStyle(.white)
@@ -100,6 +102,7 @@ struct ImageDetailView: View {
                         Image(systemName: "ellipsis.circle")
                             .foregroundStyle(.white)
                     }
+                    .accessibilityLabel("Image options")
                 }
             }
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -116,11 +119,21 @@ struct ImageDetailView: View {
                 Button("Delete", role: .destructive) {
                     Task {
                         await PhotoLibraryManager.shared.deletePhoto(photo)
-                        dismiss()
+                        if PhotoLibraryManager.shared.errorMessage == nil {
+                            dismiss()
+                        }
                     }
                 }
             } message: {
                 Text("Are you sure you want to delete this photo?")
+            }
+            .alert("Error", isPresented: Binding(
+                get: { PhotoLibraryManager.shared.errorMessage != nil },
+                set: { if !$0 { PhotoLibraryManager.shared.errorMessage = nil } }
+            )) {
+                Button("OK") { PhotoLibraryManager.shared.errorMessage = nil }
+            } message: {
+                Text(PhotoLibraryManager.shared.errorMessage ?? "")
             }
         }
         .task {
