@@ -8,29 +8,52 @@
 import SwiftUI
 import Photos
 
-/// Detailed view for examining and enhancing microscope images
+/// Full-screen image viewer with swipe navigation and thumbnail strip, similar to native Photos app
 struct ImageDetailView: View {
-    let photo: CapturedPhoto
+    let photos: [CapturedPhoto]
+    let initialPhoto: CapturedPhoto
     @Environment(\.dismiss) private var dismiss
-    @State private var fullResImage: UIImage?
+    @State private var currentPhotoID: String
+    @State private var showingDeleteAlert = false
+    @State private var showingEnhancementOptions = false
     @State private var enhancedImage: UIImage?
     @State private var isEnhancing = false
-    @State private var showingEnhancementOptions = false
-    @State private var currentScale: CGFloat = 1.0
-    @State private var showingDeleteAlert = false
+    
+    init(photos: [CapturedPhoto], initialPhoto: CapturedPhoto) {
+        self.photos = photos
+        self.initialPhoto = initialPhoto
+        self._currentPhotoID = State(initialValue: initialPhoto.id)
+    }
+    
+    private var currentPhoto: CapturedPhoto? {
+        photos.first { $0.id == currentPhotoID }
+    }
     
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
                 
-                if let displayImage = enhancedImage ?? fullResImage {
-                    ImageViewer(image: displayImage, scale: $currentScale)
-                        .accessibilityLabel(enhancedImage != nil ? "Enhanced microscope image" : "Microscope image")
-                        .accessibilityHint("Double tap to zoom in or out")
-                } else {
-                    ProgressView("Loading image...")
-                        .foregroundStyle(.white)
+                VStack(spacing: 0) {
+                    // Main swipeable image area
+                    TabView(selection: $currentPhotoID) {
+                        ForEach(photos) { photo in
+                            SingleImagePage(photo: photo, enhancedImage: photo.id == currentPhotoID ? enhancedImage : nil)
+                                .tag(photo.id)
+                        }
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .onChange(of: currentPhotoID) { _, _ in
+                        // Clear enhancement when swiping to a different photo
+                        enhancedImage = nil
+                    }
+                    
+                    // Thumbnail strip at bottom
+                    ThumbnailStripView(
+                        photos: photos,
+                        currentPhotoID: $currentPhotoID
+                    )
+                    .padding(.bottom, 8)
                 }
                 
                 // Enhancement indicator
@@ -45,11 +68,10 @@ struct ImageDetailView: View {
                         }
                         .padding()
                         .background(.ultraThinMaterial, in: Capsule())
-                        .padding(.bottom, 100)
+                        .padding(.bottom, 140)
                     }
                 }
             }
-            .navigationTitle("Image Detail")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -83,12 +105,10 @@ struct ImageDetailView: View {
                         
                         Divider()
                         
-                        if let imageToShare = enhancedImage ?? fullResImage {
-                            Button {
-                                shareImage(imageToShare)
-                            } label: {
-                                Label("Share", systemImage: "square.and.arrow.up")
-                            }
+                        Button {
+                            shareCurrentImage()
+                        } label: {
+                            Label("Share", systemImage: "square.and.arrow.up")
                         }
                         
                         Divider()
@@ -107,20 +127,24 @@ struct ImageDetailView: View {
             }
             .toolbarBackground(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingEnhancementOptions) {
-                EnhancementOptionsView(
-                    originalImage: fullResImage,
-                    onEnhanced: { enhanced in
+                if let photo = currentPhoto {
+                    EnhancementOptionsSheet(photo: photo) { enhanced in
                         enhancedImage = enhanced
                     }
-                )
+                }
             }
             .alert("Delete Photo", isPresented: $showingDeleteAlert) {
                 Button("Cancel", role: .cancel) { }
                 Button("Delete", role: .destructive) {
                     Task {
-                        await PhotoLibraryManager.shared.deletePhoto(photo)
-                        if PhotoLibraryManager.shared.errorMessage == nil {
-                            dismiss()
+                        if let photo = currentPhoto {
+                            await PhotoLibraryManager.shared.deletePhoto(photo)
+                            if PhotoLibraryManager.shared.errorMessage == nil {
+                                // If no more photos, dismiss
+                                if PhotoLibraryManager.shared.photos.isEmpty {
+                                    dismiss()
+                                }
+                            }
                         }
                     }
                 }
@@ -136,33 +160,171 @@ struct ImageDetailView: View {
                 Text(PhotoLibraryManager.shared.errorMessage ?? "")
             }
         }
-        .task {
-            fullResImage = await PhotoLibraryManager.shared.loadFullResolutionImage(for: photo)
-        }
     }
     
     private func autoEnhance() {
-        guard let image = fullResImage else { return }
+        guard let photo = currentPhoto else { return }
         
         isEnhancing = true
         
         Task {
-            enhancedImage = await ImageEnhancementManager.shared.enhanceForMicroscopy(image)
+            if let fullImage = await PhotoLibraryManager.shared.loadFullResolutionImage(for: photo) {
+                enhancedImage = await ImageEnhancementManager.shared.enhanceForMicroscopy(fullImage)
+            }
             isEnhancing = false
         }
     }
     
-    private func shareImage(_ image: UIImage) {
-        let activityController = UIActivityViewController(
-            activityItems: [image],
-            applicationActivities: nil
-        )
+    private func shareCurrentImage() {
+        guard let photo = currentPhoto else { return }
         
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let window = windowScene.windows.first,
-           let rootViewController = window.rootViewController {
-            activityController.popoverPresentationController?.sourceView = rootViewController.view
-            rootViewController.present(activityController, animated: true)
+        Task {
+            let image: UIImage?
+            if let enhanced = enhancedImage {
+                image = enhanced
+            } else {
+                image = await PhotoLibraryManager.shared.loadFullResolutionImage(for: photo)
+            }
+            
+            guard let image else { return }
+            
+            let activityController = UIActivityViewController(
+                activityItems: [image],
+                applicationActivities: nil
+            )
+            
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let window = windowScene.windows.first,
+               let rootViewController = window.rootViewController {
+                activityController.popoverPresentationController?.sourceView = rootViewController.view
+                rootViewController.present(activityController, animated: true)
+            }
+        }
+    }
+}
+
+// MARK: - Single Image Page (used inside TabView)
+
+private struct SingleImagePage: View {
+    let photo: CapturedPhoto
+    let enhancedImage: UIImage?
+    @State private var fullResImage: UIImage?
+    @State private var scale: CGFloat = 1.0
+    
+    var body: some View {
+        Group {
+            if let displayImage = enhancedImage ?? fullResImage {
+                ImageViewer(image: displayImage, scale: $scale)
+                    .accessibilityLabel(enhancedImage != nil ? "Enhanced microscope image" : "Microscope image")
+                    .accessibilityHint("Double tap to zoom, swipe to navigate")
+            } else {
+                ProgressView()
+                    .tint(.white)
+            }
+        }
+        .task {
+            fullResImage = await PhotoLibraryManager.shared.loadFullResolutionImage(for: photo)
+        }
+    }
+}
+
+// MARK: - Enhancement Options Sheet Helper
+
+private struct EnhancementOptionsSheet: View {
+    let photo: CapturedPhoto
+    let onEnhanced: (UIImage?) -> Void
+    @State private var originalImage: UIImage?
+    
+    var body: some View {
+        Group {
+            if let originalImage {
+                EnhancementOptionsView(
+                    originalImage: originalImage,
+                    onEnhanced: onEnhanced
+                )
+            } else {
+                ProgressView("Loading image...")
+            }
+        }
+        .task {
+            originalImage = await PhotoLibraryManager.shared.loadFullResolutionImage(for: photo)
+        }
+    }
+}
+
+// MARK: - Thumbnail Strip
+
+private struct ThumbnailStripView: View {
+    let photos: [CapturedPhoto]
+    @Binding var currentPhotoID: String
+    
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    ForEach(photos) { photo in
+                        ThumbnailItem(
+                            photo: photo,
+                            isSelected: photo.id == currentPhotoID
+                        )
+                        .id(photo.id)
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                currentPhotoID = photo.id
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+            }
+            .frame(height: 70)
+            .background(.black.opacity(0.6))
+            .onChange(of: currentPhotoID) { _, newID in
+                withAnimation {
+                    proxy.scrollTo(newID, anchor: .center)
+                }
+            }
+            .onAppear {
+                proxy.scrollTo(currentPhotoID, anchor: .center)
+            }
+        }
+    }
+}
+
+// MARK: - Single Thumbnail in Strip
+
+private struct ThumbnailItem: View {
+    let photo: CapturedPhoto
+    let isSelected: Bool
+    @State private var image: UIImage?
+    
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 56, height: 56)
+                    .clipped()
+            } else {
+                Rectangle()
+                    .fill(.gray.opacity(0.3))
+                    .frame(width: 56, height: 56)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(isSelected ? .white : .clear, lineWidth: 2)
+        )
+        .opacity(isSelected ? 1.0 : 0.6)
+        .accessibilityLabel("Thumbnail")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .task {
+            image = await PhotoLibraryManager.shared.loadImage(
+                for: photo,
+                targetSize: CGSize(width: 120, height: 120)
+            )
         }
     }
 }
@@ -305,5 +467,8 @@ struct ImageViewer: View {
 }
 
 #Preview {
-    ImageDetailView(photo: CapturedPhoto(asset: .init()))
+    ImageDetailView(
+        photos: [CapturedPhoto(asset: .init())],
+        initialPhoto: CapturedPhoto(asset: .init())
+    )
 }

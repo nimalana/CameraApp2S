@@ -52,7 +52,7 @@ struct GalleryView: View {
                 }
             }
             .sheet(item: $selectedPhoto) { photo in
-                ImageDetailView(photo: photo)
+                ImageDetailView(photos: photoLibrary.photos, initialPhoto: photo)
             }
             .task {
                 await photoLibrary.checkAuthorization()
