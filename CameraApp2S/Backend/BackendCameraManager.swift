@@ -25,6 +25,8 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var isUsingFrontCamera = false
     @Published var availableCameras: [AVCaptureDevice] = []
     @Published var errorMessage: String?
+    @Published var lensPosition: Float = 0.5
+    @Published var isManualFocus = false
     
     // Camera components – accessed on sessionQueue; nonisolated(unsafe) silences
     // main-actor isolation warnings since we manage thread safety via sessionQueue.
@@ -275,6 +277,53 @@ final class CameraManager: NSObject, ObservableObject {
     }
     
     // MARK: - Focus Control
+    
+    /// Sets the lens to a specific position (0.0 = nearest, 1.0 = farthest)
+    func setManualFocusPosition(_ position: Float) {
+        guard let device = videoDevice else { return }
+        
+        let clampedPosition = min(max(position, 0.0), 1.0)
+        
+        sessionQueue.async { [weak self] in
+            do {
+                try device.lockForConfiguration()
+                device.setFocusModeLocked(lensPosition: clampedPosition)
+                device.unlockForConfiguration()
+                
+                Task { @MainActor [weak self] in
+                    self?.lensPosition = clampedPosition
+                    self?.isManualFocus = true
+                    self?.focusMode = .locked
+                }
+            } catch {
+                print("Error setting manual focus: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    /// Returns to continuous autofocus from manual focus
+    func resetToAutoFocus() {
+        guard let device = videoDevice else { return }
+        
+        sessionQueue.async { [weak self] in
+            do {
+                try device.lockForConfiguration()
+                
+                if device.isFocusModeSupported(.continuousAutoFocus) {
+                    device.focusMode = .continuousAutoFocus
+                }
+                
+                device.unlockForConfiguration()
+                
+                Task { @MainActor [weak self] in
+                    self?.isManualFocus = false
+                    self?.focusMode = .continuousAutoFocus
+                }
+            } catch {
+                print("Error resetting to autofocus: \(error.localizedDescription)")
+            }
+        }
+    }
     
     func setFocusMode(_ mode: AVCaptureDevice.FocusMode) {
         guard let device = videoDevice else { return }

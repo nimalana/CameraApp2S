@@ -15,6 +15,7 @@ struct CameraView: View {
     @State private var showingGallery = false
     @State private var lastPhotoThumbnail: UIImage?
     @State private var showZoomIndicator = false
+    @State private var focusSliderValue: Float = 0.5
     
     var body: some View {
         ZStack {
@@ -65,6 +66,50 @@ struct CameraView: View {
                         ProgressView()
                             .tint(.white)
                     }
+            }
+            
+            // Vertical focus slider on right edge
+            HStack {
+                Spacer()
+                VStack(spacing: 6) {
+                    Image(systemName: "flower")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.7))
+                    
+                    // Vertical slider (rotated Slider)
+                    Slider(value: $focusSliderValue, in: 0.0...1.0)
+                        .rotationEffect(.degrees(-90))
+                        .frame(width: 200, height: 30)
+                        .tint(.yellow)
+                        .onChange(of: focusSliderValue) { _, newValue in
+                            cameraManager.setManualFocusPosition(newValue)
+                        }
+                        .accessibilityLabel("Focus")
+                        .accessibilityValue("\(Int(focusSliderValue * 100)) percent")
+                        .accessibilityHint("Adjusts manual focus distance")
+                    
+                    Image(systemName: "mountain.2")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.7))
+                    
+                    // Auto focus reset button
+                    if cameraManager.isManualFocus {
+                        Button {
+                            cameraManager.resetToAutoFocus()
+                        } label: {
+                            Text("AF")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.black)
+                                .frame(width: 30, height: 30)
+                                .background(.yellow, in: Circle())
+                        }
+                        .accessibilityLabel("Reset to auto-focus")
+                        .padding(.top, 4)
+                    }
+                }
+                .padding(.trailing, 8)
+                .padding(.vertical, 80)
             }
             
             // Camera Controls Overlay
