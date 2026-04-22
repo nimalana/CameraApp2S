@@ -18,6 +18,7 @@ struct ImageDetailView: View {
     @State private var showingEnhancementOptions = false
     @State private var enhancedImage: UIImage?
     @State private var isEnhancing = false
+    @State private var showingSaveConfirmation = false
     
     init(photos: [CapturedPhoto], initialPhoto: CapturedPhoto) {
         self.photos = photos
@@ -54,6 +55,21 @@ struct ImageDetailView: View {
                         currentPhotoID: $currentPhotoID
                     )
                     .padding(.bottom, 8)
+                }
+                
+                // Save confirmation
+                if showingSaveConfirmation {
+                    VStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.green)
+                        Text("Saved")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                    }
+                    .padding(24)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .transition(.opacity)
                 }
                 
                 // Enhancement indicator
@@ -96,6 +112,12 @@ struct ImageDetailView: View {
                         }
                         
                         if enhancedImage != nil {
+                            Button {
+                                saveEnhancedImage()
+                            } label: {
+                                Label("Save Enhanced Copy", systemImage: "square.and.arrow.down")
+                            }
+                            
                             Button {
                                 enhancedImage = nil
                             } label: {
@@ -158,6 +180,19 @@ struct ImageDetailView: View {
                 Button("OK") { PhotoLibraryManager.shared.errorMessage = nil }
             } message: {
                 Text(PhotoLibraryManager.shared.errorMessage ?? "")
+            }
+        }
+    }
+    
+    private func saveEnhancedImage() {
+        guard let enhanced = enhancedImage else { return }
+        
+        Task {
+            await PhotoLibraryManager.shared.saveImage(enhanced)
+            if PhotoLibraryManager.shared.errorMessage == nil {
+                showingSaveConfirmation = true
+                try? await Task.sleep(for: .seconds(1.5))
+                showingSaveConfirmation = false
             }
         }
     }

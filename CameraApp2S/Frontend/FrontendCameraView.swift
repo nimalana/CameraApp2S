@@ -32,6 +32,26 @@ struct CameraView: View {
                     }
                 )
                 .ignoresSafeArea()
+            } else if !cameraManager.isCameraAvailable {
+                // No camera on device
+                Color.black
+                    .ignoresSafeArea()
+                    .overlay {
+                        VStack(spacing: 16) {
+                            Image(systemName: "camera.slash.fill")
+                                .font(.system(size: 48))
+                                .foregroundStyle(.gray)
+                            Text("No Camera Available")
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.white)
+                            Text("This device does not have a camera.")
+                                .font(.subheadline)
+                                .foregroundStyle(.gray)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 40)
+                        }
+                    }
             } else if !cameraManager.isAuthorized && !cameraManager.isCameraReady {
                 // Permission denied state
                 Color.black
@@ -116,20 +136,31 @@ struct CameraView: View {
             VStack {
                 // Top Bar
                 HStack {
-                    // Camera switch button
-                    Button {
-                        Task {
-                            await cameraManager.switchCamera()
+                    // Camera picker menu
+                    Menu {
+                        ForEach(cameraManager.availableCameras, id: \.uniqueID) { camera in
+                            Button {
+                                Task {
+                                    await cameraManager.selectCamera(camera)
+                                }
+                            } label: {
+                                Label(
+                                    CameraManager.displayName(for: camera),
+                                    systemImage: camera.position == .front ? "camera.front.fill" : "camera.fill"
+                                )
+                            }
                         }
                     } label: {
-                        Image(systemName: "camera.rotate.fill")
-                            .font(.title2)
-                            .foregroundStyle(.white)
-                            .padding()
-                            .background(.ultraThinMaterial, in: Circle())
+                        HStack(spacing: 4) {
+                            Image(systemName: "camera.rotate.fill")
+                                .font(.title2)
+                        }
+                        .foregroundStyle(.white)
+                        .padding()
+                        .background(.ultraThinMaterial, in: Circle())
                     }
-                    .accessibilityLabel("Switch camera")
-                    .accessibilityHint("Switches between front and rear camera")
+                    .accessibilityLabel("Select camera")
+                    .accessibilityHint("Choose from available cameras")
                     
                     Spacer()
                     

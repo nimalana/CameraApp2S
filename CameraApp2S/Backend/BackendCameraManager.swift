@@ -15,6 +15,7 @@ import Combine
 final class CameraManager: NSObject, ObservableObject {
     @Published var isAuthorized = false
     @Published var isCameraReady = false
+    @Published var isCameraAvailable = true
     @Published var isRecording = false
     @Published var focusMode: AVCaptureDevice.FocusMode = .continuousAutoFocus
     @Published var exposureMode: AVCaptureDevice.ExposureMode = .continuousAutoExposure
@@ -24,6 +25,7 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var capturedImage: UIImage?
     @Published var isUsingFrontCamera = false
     @Published var availableCameras: [AVCaptureDevice] = []
+    @Published var currentCameraName: String = ""
     @Published var errorMessage: String?
     @Published var lensPosition: Float = 0.5
     @Published var isManualFocus = false
@@ -68,6 +70,10 @@ final class CameraManager: NSObject, ObservableObject {
             name: AVCaptureSession.runtimeErrorNotification,
             object: captureSession
         )
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
     
     @objc nonisolated private func subjectAreaDidChange(_ notification: Notification) {
@@ -122,7 +128,13 @@ final class CameraManager: NSObject, ObservableObject {
         )
         availableCameras = discoverySession.devices
         
-        await configureSession(with: AVCaptureDevice.default(for: .video))
+        guard let defaultDevice = AVCaptureDevice.default(for: .video) else {
+            isCameraAvailable = false
+            errorMessage = "No camera available on this device."
+            return
+        }
+        
+        await configureSession(with: defaultDevice)
     }
     
     private func configureSession(with device: AVCaptureDevice?) async {
@@ -187,6 +199,8 @@ final class CameraManager: NSObject, ObservableObject {
                         self.currentZoomFactor = 1.0
                         self.isCameraReady = true
                         self.isUsingFrontCamera = videoDevice.position == .front
+                        self.currentCameraName = CameraManager.displayName(for: videoDevice)
+                        self.isManualFocus = false
                         // Lock AE/AF once autofocus finishes acquiring
                         self.observeAndLockWhenReady(device: videoDevice)
                     }
@@ -209,6 +223,30 @@ final class CameraManager: NSObject, ObservableObject {
         
         let newDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: newPosition)
         await configureSession(with: newDevice)
+    }
+    
+    /// Switch to a specific camera device
+    func selectCamera(_ device: AVCaptureDevice) async {
+        await configureSession(with: device)
+    }
+    
+    /// Human-readable name for a camera device
+    static func displayName(for device: AVCaptureDevice) -> String {
+        let position = device.position == .front ? "Front" : "Rear"
+        switch device.deviceType {
+        case .builtInWideAngleCamera:
+            return "\(position) Wide"
+        case .builtInTelephotoCamera:
+            return "\(position) Telephoto"
+        case .builtInUltraWideCamera:
+            return "\(position) Ultra Wide"
+        case .builtInDualCamera:
+            return "\(position) Dual"
+        case .builtInTripleCamera:
+            return "\(position) Triple"
+        default:
+            return "\(position) \(device.localizedName)"
+        }
     }
     
     /// Observe autofocus/autoexposure completion via KVO, then lock AE/AF
@@ -348,7 +386,7 @@ final class CameraManager: NSObject, ObservableObject {
     }
     
     func setFocusPoint(_ point: CGPoint) {
-        guard let device = videoDevice, !isLocked else { return }
+        guard let device = videoDevice else { return }
         
         sessionQueue.async { [weak self] in
             do {
@@ -371,6 +409,8 @@ final class CameraManager: NSObject, ObservableObject {
                 
                 Task { @MainActor [weak self] in
                     self?.focusMode = .autoFocus
+                    self?.isLocked = false
+                    self?.isManualFocus = false
                 }
             } catch {
                 print("Error setting focus point: \(error.localizedDescription)")
@@ -380,7 +420,9 @@ final class CameraManager: NSObject, ObservableObject {
     
     /// Called when the subject area changes to return to continuous autofocus
     func resumeContinuousAutoFocus() {
-        guard let device = videoDevice, !isLocked else { return }
+        guard let device = videoDevice else { return }
+        // Only resume if not manually locked by the user
+        guard !isLocked else { return }
         
         sessionQueue.async { [weak self] in
             do {
