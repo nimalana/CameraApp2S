@@ -56,6 +56,21 @@ class PhotoLibraryManager: ObservableObject {
         }
     }
     
+    // MARK: - Save Video
+    
+    func saveVideo(at url: URL) async {
+        do {
+            try await PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
+            }
+            
+            // Reload media after saving
+            await loadPhotos()
+        } catch {
+            errorMessage = "Failed to save video: \(error.localizedDescription)"
+        }
+    }
+    
     // MARK: - Load Photos
     
     func loadPhotos() async {
@@ -68,7 +83,8 @@ class PhotoLibraryManager: ObservableObject {
         fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         fetchOptions.fetchLimit = 100 // Load most recent 100 photos
         
-        allPhotos = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+        // Fetch both images and videos
+        allPhotos = PHAsset.fetchAssets(with: fetchOptions)
         
         guard let allPhotos = allPhotos else { return }
         
@@ -138,7 +154,7 @@ class PhotoLibraryManager: ObservableObject {
         fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         fetchOptions.fetchLimit = 1
         
-        let result = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+        let result = PHAsset.fetchAssets(with: fetchOptions)
         guard let asset = result.firstObject else { return nil }
         
         let options = PHImageRequestOptions()
@@ -158,6 +174,29 @@ class PhotoLibraryManager: ObservableObject {
                 guard !hasResumed, !isDegraded else { return }
                 hasResumed = true
                 continuation.resume(returning: image)
+            }
+        }
+    }
+    
+    // MARK: - Load Video
+    
+    func loadVideoURL(for photo: CapturedPhoto) async -> URL? {
+        guard photo.isVideo else { return nil }
+        
+        let options = PHVideoRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .highQualityFormat
+        
+        return await withCheckedContinuation { continuation in
+            var hasResumed = false
+            PHImageManager.default().requestAVAsset(forVideo: photo.asset, options: options) { avAsset, _, _ in
+                guard !hasResumed else { return }
+                hasResumed = true
+                if let urlAsset = avAsset as? AVURLAsset {
+                    continuation.resume(returning: urlAsset.url)
+                } else {
+                    continuation.resume(returning: nil)
+                }
             }
         }
     }
@@ -184,10 +223,21 @@ struct CapturedPhoto: Identifiable {
     let id: String
     let asset: PHAsset
     let creationDate: Date?
+    let isVideo: Bool
+    let videoDuration: TimeInterval
     
     init(asset: PHAsset) {
         self.id = asset.localIdentifier
         self.asset = asset
         self.creationDate = asset.creationDate
+        self.isVideo = asset.mediaType == .video
+        self.videoDuration = asset.duration
+    }
+    
+    /// Format duration as mm:ss
+    var formattedDuration: String {
+        let minutes = Int(videoDuration) / 60
+        let seconds = Int(videoDuration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }

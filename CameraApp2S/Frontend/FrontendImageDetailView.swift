@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Photos
+import AVKit
 
 /// Full-screen image viewer with swipe navigation and thumbnail strip, similar to native Photos app
 struct ImageDetailView: View {
@@ -99,33 +100,36 @@ struct ImageDetailView: View {
                 
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        Button {
-                            showingEnhancementOptions = true
-                        } label: {
-                            Label("Enhance Image", systemImage: "wand.and.stars")
-                        }
-                        
-                        Button {
-                            autoEnhance()
-                        } label: {
-                            Label("Auto Enhance", systemImage: "sparkles")
-                        }
-                        
-                        if enhancedImage != nil {
+                        // Enhancement options only for photos
+                        if currentPhoto?.isVideo != true {
                             Button {
-                                saveEnhancedImage()
+                                showingEnhancementOptions = true
                             } label: {
-                                Label("Save Enhanced Copy", systemImage: "square.and.arrow.down")
+                                Label("Enhance Image", systemImage: "wand.and.stars")
                             }
                             
                             Button {
-                                enhancedImage = nil
+                                autoEnhance()
                             } label: {
-                                Label("Reset to Original", systemImage: "arrow.counterclockwise")
+                                Label("Auto Enhance", systemImage: "sparkles")
                             }
+                            
+                            if enhancedImage != nil {
+                                Button {
+                                    saveEnhancedImage()
+                                } label: {
+                                    Label("Save Enhanced Copy", systemImage: "square.and.arrow.down")
+                                }
+                                
+                                Button {
+                                    enhancedImage = nil
+                                } label: {
+                                    Label("Reset to Original", systemImage: "arrow.counterclockwise")
+                                }
+                            }
+                            
+                            Divider()
                         }
-                        
-                        Divider()
                         
                         Button {
                             shareCurrentImage()
@@ -144,7 +148,7 @@ struct ImageDetailView: View {
                         Image(systemName: "ellipsis.circle")
                             .foregroundStyle(.white)
                     }
-                    .accessibilityLabel("Image options")
+                    .accessibilityLabel(currentPhoto?.isVideo == true ? "Video options" : "Image options")
                 }
             }
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -155,7 +159,7 @@ struct ImageDetailView: View {
                     }
                 }
             }
-            .alert("Delete Photo", isPresented: $showingDeleteAlert) {
+            .alert(currentPhoto?.isVideo == true ? "Delete Video" : "Delete Photo", isPresented: $showingDeleteAlert) {
                 Button("Cancel", role: .cancel) { }
                 Button("Delete", role: .destructive) {
                     Task {
@@ -171,7 +175,7 @@ struct ImageDetailView: View {
                     }
                 }
             } message: {
-                Text("Are you sure you want to delete this photo?")
+                Text("Are you sure you want to delete this \(currentPhoto?.isVideo == true ? "video" : "photo")?")
             }
             .alert("Error", isPresented: Binding(
                 get: { PhotoLibraryManager.shared.errorMessage != nil },
@@ -238,17 +242,30 @@ struct ImageDetailView: View {
     }
 }
 
-// MARK: - Single Image Page (used inside TabView)
+// MARK: - Single Media Page (used inside TabView)
 
 private struct SingleImagePage: View {
     let photo: CapturedPhoto
     let enhancedImage: UIImage?
     @State private var fullResImage: UIImage?
     @State private var scale: CGFloat = 1.0
+    @State private var videoPlayer: AVPlayer?
     
     var body: some View {
         Group {
-            if let displayImage = enhancedImage ?? fullResImage {
+            if photo.isVideo {
+                if let player = videoPlayer {
+                    VideoPlayer(player: player)
+                        .accessibilityLabel("Microscope video")
+                        .accessibilityHint("Video playback with controls")
+                        .onDisappear {
+                            player.pause()
+                        }
+                } else {
+                    ProgressView()
+                        .tint(.white)
+                }
+            } else if let displayImage = enhancedImage ?? fullResImage {
                 ImageViewer(image: displayImage, scale: $scale)
                     .accessibilityLabel(enhancedImage != nil ? "Enhanced microscope image" : "Microscope image")
                     .accessibilityHint("Double tap to zoom, swipe to navigate")
@@ -258,7 +275,13 @@ private struct SingleImagePage: View {
             }
         }
         .task {
-            fullResImage = await PhotoLibraryManager.shared.loadFullResolutionImage(for: photo)
+            if photo.isVideo {
+                if let url = await PhotoLibraryManager.shared.loadVideoURL(for: photo) {
+                    videoPlayer = AVPlayer(url: url)
+                }
+            } else {
+                fullResImage = await PhotoLibraryManager.shared.loadFullResolutionImage(for: photo)
+            }
         }
     }
 }

@@ -195,7 +195,7 @@ struct CameraView: View {
                 Spacer()
                 
                 // Bottom Controls
-                VStack(spacing: 20) {
+                VStack(spacing: 16) {
                     // Zoom indicator (appears during pinch)
                     if showZoomIndicator {
                         Text("\(String(format: "%.1f", cameraManager.currentZoomFactor))×")
@@ -207,6 +207,46 @@ struct CameraView: View {
                             .background(.ultraThinMaterial, in: Capsule())
                             .transition(.opacity)
                             .accessibilityLabel("Zoom \(String(format: "%.1f", cameraManager.currentZoomFactor)) times")
+                    }
+                    
+                    // Recording duration
+                    if cameraManager.isRecording {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(.red)
+                                .frame(width: 8, height: 8)
+                            Text(formatDuration(cameraManager.recordingDuration))
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.red.opacity(0.6), in: Capsule())
+                    }
+                    
+                    // Photo / Video mode toggle
+                    HStack(spacing: 24) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                cameraManager.isVideoMode = false
+                            }
+                        } label: {
+                            Text("Photo")
+                                .font(.subheadline)
+                                .fontWeight(cameraManager.isVideoMode ? .regular : .bold)
+                                .foregroundStyle(cameraManager.isVideoMode ? .white.opacity(0.6) : .yellow)
+                        }
+                        
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                cameraManager.isVideoMode = true
+                            }
+                        } label: {
+                            Text("Video")
+                                .font(.subheadline)
+                                .fontWeight(cameraManager.isVideoMode ? .bold : .regular)
+                                .foregroundStyle(cameraManager.isVideoMode ? .yellow : .white.opacity(0.6))
+                        }
                     }
                     
                     // Main Action Buttons
@@ -237,25 +277,55 @@ struct CameraView: View {
                         .accessibilityHint("Opens the photo gallery")
                         .frame(maxWidth: .infinity)
                         
-                        // Capture Button
-                        Button {
-                            let generator = UIImpactFeedbackGenerator(style: .medium)
-                            generator.impactOccurred()
-                            cameraManager.capturePhoto()
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(.white)
-                                    .frame(width: 70, height: 70)
-                                
-                                Circle()
-                                    .stroke(.white, lineWidth: 3)
-                                    .frame(width: 80, height: 80)
+                        // Capture / Record Button
+                        if cameraManager.isVideoMode {
+                            Button {
+                                let generator = UIImpactFeedbackGenerator(style: .medium)
+                                generator.impactOccurred()
+                                if cameraManager.isRecording {
+                                    cameraManager.stopRecording()
+                                } else {
+                                    cameraManager.startRecording()
+                                }
+                            } label: {
+                                ZStack {
+                                    Circle()
+                                        .stroke(.white, lineWidth: 3)
+                                        .frame(width: 80, height: 80)
+                                    
+                                    if cameraManager.isRecording {
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(.red)
+                                            .frame(width: 32, height: 32)
+                                    } else {
+                                        Circle()
+                                            .fill(.red)
+                                            .frame(width: 70, height: 70)
+                                    }
+                                }
                             }
+                            .accessibilityLabel(cameraManager.isRecording ? "Stop recording" : "Start recording")
+                            .frame(maxWidth: .infinity)
+                        } else {
+                            Button {
+                                let generator = UIImpactFeedbackGenerator(style: .medium)
+                                generator.impactOccurred()
+                                cameraManager.capturePhoto()
+                            } label: {
+                                ZStack {
+                                    Circle()
+                                        .fill(.white)
+                                        .frame(width: 70, height: 70)
+                                    
+                                    Circle()
+                                        .stroke(.white, lineWidth: 3)
+                                        .frame(width: 80, height: 80)
+                                }
+                            }
+                            .accessibilityLabel("Capture photo")
+                            .accessibilityHint("Takes a photo")
+                            .frame(maxWidth: .infinity)
                         }
-                        .accessibilityLabel("Capture photo")
-                        .accessibilityHint("Takes a photo")
-                        .frame(maxWidth: .infinity)
                         
                         // Lock/Unlock Button
                         Button {
@@ -346,6 +416,12 @@ struct CameraView: View {
     private func loadLatestThumbnail() async {
         await PhotoLibraryManager.shared.checkAuthorization()
         lastPhotoThumbnail = await PhotoLibraryManager.shared.loadLatestPhotoThumbnail()
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }
 

@@ -29,12 +29,18 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var errorMessage: String?
     @Published var lensPosition: Float = 0.5
     @Published var isManualFocus = false
+    @Published var isVideoMode = false
+    @Published var recordingDuration: TimeInterval = 0
+    
+    private var recordingTimer: Timer?
     
     // Camera components – accessed on sessionQueue; nonisolated(unsafe) silences
     // main-actor isolation warnings since we manage thread safety via sessionQueue.
     nonisolated(unsafe) private let captureSession = AVCaptureSession()
     nonisolated(unsafe) private var videoDeviceInput: AVCaptureDeviceInput?
+    nonisolated(unsafe) private var audioDeviceInput: AVCaptureDeviceInput?
     nonisolated(unsafe) private var photoOutput: AVCapturePhotoOutput?
+    nonisolated(unsafe) private var movieFileOutput: AVCaptureMovieFileOutput?
     nonisolated(unsafe) private var videoDevice: AVCaptureDevice?
     
     // Session queue for async camera operations
@@ -113,6 +119,11 @@ final class CameraManager: NSObject, ObservableObject {
         default:
             isAuthorized = false
         }
+        
+        // Also request microphone access for video recording
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            _ = await AVCaptureDevice.requestAccess(for: .audio)
+        }
     }
     
     // MARK: - Session Configuration
@@ -149,13 +160,16 @@ final class CameraManager: NSObject, ObservableObject {
                 
                 strongSelf.captureSession.beginConfiguration()
                 
-                // Remove existing input
+                // Remove existing inputs
                 if let existingInput = strongSelf.videoDeviceInput {
                     strongSelf.captureSession.removeInput(existingInput)
                 }
+                if let existingAudio = strongSelf.audioDeviceInput {
+                    strongSelf.captureSession.removeInput(existingAudio)
+                }
                 
-                // Configure for high-quality photo capture
-                strongSelf.captureSession.sessionPreset = .photo
+                // Use high preset that supports both photo and video
+                strongSelf.captureSession.sessionPreset = .high
                 
                 strongSelf.videoDevice = videoDevice
                 
@@ -176,6 +190,24 @@ final class CameraManager: NSObject, ObservableObject {
                             strongSelf.captureSession.addOutput(photoOutput)
                             strongSelf.photoOutput = photoOutput
                         }
+                    }
+                    
+                    // Add movie file output for video recording
+                    if strongSelf.movieFileOutput == nil {
+                        let movieOutput = AVCaptureMovieFileOutput()
+                        if strongSelf.captureSession.canAddOutput(movieOutput) {
+                            strongSelf.captureSession.addOutput(movieOutput)
+                            strongSelf.movieFileOutput = movieOutput
+                        }
+                    }
+                    
+                    // Add audio input for video recording
+                    if strongSelf.audioDeviceInput == nil,
+                       let audioDevice = AVCaptureDevice.default(for: .audio),
+                       let audioInput = try? AVCaptureDeviceInput(device: audioDevice),
+                       strongSelf.captureSession.canAddInput(audioInput) {
+                        strongSelf.captureSession.addInput(audioInput)
+                        strongSelf.audioDeviceInput = audioInput
                     }
                     
                     // Start with autofocus to acquire initial focus
@@ -530,6 +562,50 @@ final class CameraManager: NSObject, ObservableObject {
         setZoom(newZoom)
     }
     
+    // MARK: - Video Recording
+    
+    func startRecording() {
+        guard let movieFileOutput, !movieFileOutput.isRecording else { return }
+        
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("mov")
+        
+        let output = movieFileOutput
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            output.startRecording(to: outputURL, recordingDelegate: self)
+            Task { @MainActor [weak self] in
+                self?.isRecording = true
+                self?.recordingDuration = 0
+                self?.startRecordingTimer()
+            }
+        }
+    }
+    
+    func stopRecording() {
+        guard let movieFileOutput, movieFileOutput.isRecording else { return }
+        let output = movieFileOutput
+        sessionQueue.async {
+            output.stopRecording()
+        }
+    }
+    
+    private func startRecordingTimer() {
+        recordingTimer?.invalidate()
+        recordingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.recordingDuration += 1.0
+            }
+        }
+    }
+    
+    private func stopRecordingTimer() {
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        recordingDuration = 0
+    }
+    
     // MARK: - Photo Capture
     
     func capturePhoto() {
@@ -576,6 +652,30 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
             self.capturedImage = image
             // Save to photo library
             await PhotoLibraryManager.shared.saveImage(image)
+        }
+    }
+}
+
+// MARK: - AVCaptureFileOutputRecordingDelegate
+
+extension CameraManager: AVCaptureFileOutputRecordingDelegate {
+    nonisolated func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
+        Task { @MainActor in
+            self.isRecording = false
+            self.stopRecordingTimer()
+            
+            if let error {
+                self.errorMessage = "Failed to record video: \(error.localizedDescription)"
+                // Clean up temp file
+                try? FileManager.default.removeItem(at: outputFileURL)
+                return
+            }
+            
+            // Save video to photo library
+            await PhotoLibraryManager.shared.saveVideo(at: outputFileURL)
+            
+            // Clean up temp file after saving
+            try? FileManager.default.removeItem(at: outputFileURL)
         }
     }
 }

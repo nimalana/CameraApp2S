@@ -22,9 +22,9 @@ struct GalleryView: View {
                     ProgressView("Loading photos...")
                 } else if photoLibrary.photos.isEmpty {
                     ContentUnavailableView(
-                        "No Photos",
+                        "No Photos or Videos",
                         systemImage: "photo.on.rectangle.angled",
-                        description: Text("Capture your first microscope image")
+                        description: Text("Capture your first microscope image or video")
                     )
                 } else {
                     ScrollView {
@@ -34,8 +34,8 @@ struct GalleryView: View {
                                     .onTapGesture {
                                         selectedPhoto = photo
                                     }
-                                    .accessibilityLabel("Photo taken \(photo.creationDate?.formatted(date: .abbreviated, time: .shortened) ?? "unknown date")")
-                                    .accessibilityHint("Opens full-size image")
+                                    .accessibilityLabel("\(photo.isVideo ? "Video" : "Photo") taken \(photo.creationDate?.formatted(date: .abbreviated, time: .shortened) ?? "unknown date")")
+                                    .accessibilityHint(photo.isVideo ? "Opens video player" : "Opens full-size image")
                                     .accessibilityAddTraits(.isButton)
                             }
                         }
@@ -72,18 +72,35 @@ struct PhotoThumbnailView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            if let image = image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geometry.size.width, height: geometry.size.width)
-                    .clipped()
-            } else {
-                Rectangle()
-                    .fill(.gray.opacity(0.3))
-                    .overlay {
-                        ProgressView()
+            ZStack(alignment: .bottomLeading) {
+                if let image = image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geometry.size.width, height: geometry.size.width)
+                        .clipped()
+                } else {
+                    Rectangle()
+                        .fill(.gray.opacity(0.3))
+                        .overlay {
+                            ProgressView()
+                        }
+                }
+                
+                // Video duration badge
+                if photo.isVideo {
+                    HStack(spacing: 3) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 8))
+                        Text(photo.formattedDuration)
+                            .font(.caption2)
                     }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 3))
+                    .padding(4)
+                }
             }
         }
         .aspectRatio(1, contentMode: .fit)
