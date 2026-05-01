@@ -102,7 +102,7 @@ class PhotoLibraryManager: ObservableObject {
     
     func loadImage(for photo: CapturedPhoto, targetSize: CGSize = CGSize(width: 500, height: 500)) async -> UIImage? {
         let options = PHImageRequestOptions()
-        options.deliveryMode = .highQualityFormat
+        options.deliveryMode = .opportunistic
         options.isNetworkAccessAllowed = true
         options.isSynchronous = false
         
@@ -114,11 +114,18 @@ class PhotoLibraryManager: ObservableObject {
                 contentMode: .aspectFill,
                 options: options
             ) { image, info in
-                // Guard against multiple callbacks (degraded + final)
+                guard !hasResumed else { return }
+                // Accept degraded if it's the only result, or wait for final
                 let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
-                guard !hasResumed, !isDegraded else { return }
-                hasResumed = true
-                continuation.resume(returning: image)
+                let isCancelled = (info?[PHImageCancelledKey] as? Bool) ?? false
+                let error = info?[PHImageErrorKey] as? Error
+                
+                if !isDegraded || error != nil || isCancelled {
+                    // Final callback (or error/cancel) — always resume
+                    hasResumed = true
+                    continuation.resume(returning: image)
+                }
+                // Skip degraded — wait for the high-quality version
             }
         }
     }
@@ -137,8 +144,7 @@ class PhotoLibraryManager: ObservableObject {
                 contentMode: .aspectFit,
                 options: options
             ) { image, info in
-                let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
-                guard !hasResumed, !isDegraded else { return }
+                guard !hasResumed else { return }
                 hasResumed = true
                 continuation.resume(returning: image)
             }
@@ -219,7 +225,7 @@ class PhotoLibraryManager: ObservableObject {
 
 // MARK: - CapturedPhoto Model
 
-struct CapturedPhoto: Identifiable {
+struct CapturedPhoto: Identifiable, Hashable {
     let id: String
     let asset: PHAsset
     let creationDate: Date?
@@ -232,6 +238,14 @@ struct CapturedPhoto: Identifiable {
         self.creationDate = asset.creationDate
         self.isVideo = asset.mediaType == .video
         self.videoDuration = asset.duration
+    }
+    
+    static func == (lhs: CapturedPhoto, rhs: CapturedPhoto) -> Bool {
+        lhs.id == rhs.id
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
     
     /// Format duration as mm:ss

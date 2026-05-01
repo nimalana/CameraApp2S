@@ -268,9 +268,10 @@
 				DEVELOPMENT_TEAM = 2QJ4KU8957;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "So it has camera access";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "So it can add photos";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "So it has photo access";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Microscope Camera needs camera access to capture images and videos.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microscope Camera needs microphone access to record audio.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Microscope Camera needs permission to save captured images and videos to your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Microscope Camera needs photo library access to view and manage your captured images and videos.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -303,9 +304,10 @@
 				DEVELOPMENT_TEAM = 2QJ4KU8957;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "So it has camera access";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "So it can add photos";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "So it has photo access";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Microscope Camera needs camera access to capture images and videos.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microscope Camera needs microphone access to record audio.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Microscope Camera needs permission to save captured images and videos to your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Microscope Camera needs photo library access to view and manage your captured images and videos.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

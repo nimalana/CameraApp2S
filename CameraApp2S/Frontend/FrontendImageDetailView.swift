@@ -14,7 +14,7 @@ struct ImageDetailView: View {
     let photos: [CapturedPhoto]
     let initialPhoto: CapturedPhoto
     @Environment(\.dismiss) private var dismiss
-    @State private var currentPhotoID: String
+    @State private var currentIndex: Int
     @State private var showingDeleteAlert = false
     @State private var showingEnhancementOptions = false
     @State private var enhancedImage: UIImage?
@@ -24,11 +24,17 @@ struct ImageDetailView: View {
     init(photos: [CapturedPhoto], initialPhoto: CapturedPhoto) {
         self.photos = photos
         self.initialPhoto = initialPhoto
-        self._currentPhotoID = State(initialValue: initialPhoto.id)
+        let index = photos.firstIndex(where: { $0.id == initialPhoto.id }) ?? 0
+        self._currentIndex = State(initialValue: index)
     }
     
     private var currentPhoto: CapturedPhoto? {
-        photos.first { $0.id == currentPhotoID }
+        guard currentIndex >= 0, currentIndex < photos.count else { return nil }
+        return photos[currentIndex]
+    }
+    
+    private var currentPhotoID: String {
+        currentPhoto?.id ?? ""
     }
     
     var body: some View {
@@ -38,14 +44,14 @@ struct ImageDetailView: View {
                 
                 VStack(spacing: 0) {
                     // Main swipeable image area
-                    TabView(selection: $currentPhotoID) {
-                        ForEach(photos) { photo in
-                            SingleImagePage(photo: photo, enhancedImage: photo.id == currentPhotoID ? enhancedImage : nil)
-                                .tag(photo.id)
+                    TabView(selection: $currentIndex) {
+                        ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                            SingleImagePage(photo: photo, enhancedImage: index == currentIndex ? enhancedImage : nil)
+                                .tag(index)
                         }
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
-                    .onChange(of: currentPhotoID) { _, _ in
+                    .onChange(of: currentIndex) { _, _ in
                         // Clear enhancement when swiping to a different photo
                         enhancedImage = nil
                     }
@@ -53,7 +59,7 @@ struct ImageDetailView: View {
                     // Thumbnail strip at bottom
                     ThumbnailStripView(
                         photos: photos,
-                        currentPhotoID: $currentPhotoID
+                        currentIndex: $currentIndex
                     )
                     .padding(.bottom, 8)
                 }
@@ -314,21 +320,21 @@ private struct EnhancementOptionsSheet: View {
 
 private struct ThumbnailStripView: View {
     let photos: [CapturedPhoto]
-    @Binding var currentPhotoID: String
+    @Binding var currentIndex: Int
     
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
-                    ForEach(photos) { photo in
+                    ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
                         ThumbnailItem(
                             photo: photo,
-                            isSelected: photo.id == currentPhotoID
+                            isSelected: index == currentIndex
                         )
-                        .id(photo.id)
+                        .id(index)
                         .onTapGesture {
                             withAnimation(.easeInOut(duration: 0.2)) {
-                                currentPhotoID = photo.id
+                                currentIndex = index
                             }
                         }
                     }
@@ -337,13 +343,13 @@ private struct ThumbnailStripView: View {
             }
             .frame(height: 70)
             .background(.black.opacity(0.6))
-            .onChange(of: currentPhotoID) { _, newID in
+            .onChange(of: currentIndex) { _, newIndex in
                 withAnimation {
-                    proxy.scrollTo(newID, anchor: .center)
+                    proxy.scrollTo(newIndex, anchor: .center)
                 }
             }
             .onAppear {
-                proxy.scrollTo(currentPhotoID, anchor: .center)
+                proxy.scrollTo(currentIndex, anchor: .center)
             }
         }
     }

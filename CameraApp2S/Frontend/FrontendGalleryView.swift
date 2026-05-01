@@ -71,39 +71,38 @@ struct PhotoThumbnailView: View {
     @State private var image: UIImage?
     
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .bottomLeading) {
-                if let image = image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geometry.size.width, height: geometry.size.width)
-                        .clipped()
-                } else {
-                    Rectangle()
-                        .fill(.gray.opacity(0.3))
-                        .overlay {
-                            ProgressView()
-                        }
-                }
-                
-                // Video duration badge
-                if photo.isVideo {
-                    HStack(spacing: 3) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 8))
-                        Text(photo.formattedDuration)
-                            .font(.caption2)
+        ZStack(alignment: .bottomLeading) {
+            if let image = image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                    .clipped()
+            } else {
+                Rectangle()
+                    .fill(.gray.opacity(0.3))
+                    .overlay {
+                        ProgressView()
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 3))
-                    .padding(4)
+            }
+            
+            // Video duration badge
+            if photo.isVideo {
+                HStack(spacing: 3) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 8))
+                    Text(photo.formattedDuration)
+                        .font(.caption2)
                 }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 3))
+                .padding(4)
             }
         }
         .aspectRatio(1, contentMode: .fit)
+        .contentShape(Rectangle())
         .task {
             image = await PhotoLibraryManager.shared.loadImage(
                 for: photo,
