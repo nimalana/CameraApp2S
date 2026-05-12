@@ -12,7 +12,6 @@ import AVFoundation
 struct CameraView: View {
     @StateObject private var cameraManager = CameraManager()
     @State private var showingSettings = false
-    @State private var showingGallery = false
     @State private var lastPhotoThumbnail: UIImage?
     @State private var showZoomIndicator = false
     @State private var focusSliderValue: Float = 0.5
@@ -88,48 +87,46 @@ struct CameraView: View {
                     }
             }
             
-            // Vertical focus slider on right edge
-            HStack {
-                Spacer()
-                VStack(spacing: 6) {
-                    Image(systemName: "flower")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.7))
-                    
-                    // Vertical slider (rotated Slider)
-                    Slider(value: $focusSliderValue, in: 0.0...1.0)
-                        .rotationEffect(.degrees(-90))
-                        .frame(width: 200, height: 30)
-                        .tint(.yellow)
-                        .onChange(of: focusSliderValue) { _, newValue in
-                            cameraManager.setManualFocusPosition(newValue)
-                        }
+            // Capture flash feedback
+            if cameraManager.showCaptureFlash {
+                Color.black
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+            
+            // Vertical focus slider on right edge — only show for cameras that support focus
+            if cameraManager.supportsFocus {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 6) {
+                        Image(systemName: "flower")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                        
+                        // Custom vertical focus slider
+                        FocusSliderView(
+                            value: $focusSliderValue,
+                            isAutoFocusEnabled: cameraManager.isAutoFocusEnabled,
+                            onChanged: { newValue in
+                                cameraManager.setManualFocusPosition(newValue)
+                            },
+                            onToggleAutoFocus: {
+                                cameraManager.setAutoFocus(!cameraManager.isAutoFocusEnabled)
+                            }
+                        )
                         .accessibilityLabel("Focus")
                         .accessibilityValue("\(Int(focusSliderValue * 100)) percent")
-                        .accessibilityHint("Adjusts manual focus distance")
-                    
-                    Image(systemName: "mountain.2")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.7))
-                    
-                    // Auto focus reset button
-                    if cameraManager.isManualFocus {
-                        Button {
-                            cameraManager.resetToAutoFocus()
-                        } label: {
-                            Text("AF")
-                                .font(.caption2)
-                                .fontWeight(.bold)
-                                .foregroundStyle(.black)
-                                .frame(width: 30, height: 30)
-                                .background(.yellow, in: Circle())
-                        }
-                        .accessibilityLabel("Reset to auto-focus")
-                        .padding(.top, 4)
+                        .accessibilityHint(cameraManager.isAutoFocusEnabled ? "Autofocus active" : "Drag to adjust manual focus")
+                        
+                        Image(systemName: "mountain.2")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
                     }
+                    .padding(.trailing, 2)
+                    .padding(.top, 80)
+                    .padding(.bottom, 40)
                 }
-                .padding(.trailing, 8)
-                .padding(.vertical, 80)
             }
             
             // Camera Controls Overlay
@@ -164,15 +161,17 @@ struct CameraView: View {
                     
                     Spacer()
                     
-                    // Lock indicator
+                    // Lock indicator — only show when user has explicitly locked
                     if cameraManager.isLocked {
-                        HStack {
+                        HStack(spacing: 4) {
                             Image(systemName: "lock.fill")
                             Text("AE/AF Locked")
                         }
                         .font(.caption)
+                        .fontWeight(.medium)
                         .foregroundStyle(.yellow)
-                        .padding(8)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
                         .background(.ultraThinMaterial, in: Capsule())
                         .accessibilityLabel("Auto-exposure and auto-focus locked")
                     }
@@ -251,9 +250,11 @@ struct CameraView: View {
                     
                     // Main Action Buttons
                     HStack {
-                        // Gallery thumbnail
+                        // Open Photos app
                         Button {
-                            showingGallery = true
+                            if let url = URL(string: "photos-redirect://") {
+                                UIApplication.shared.open(url)
+                            }
                         } label: {
                             if let thumbnail = lastPhotoThumbnail {
                                 Image(uiImage: thumbnail)
@@ -274,7 +275,7 @@ struct CameraView: View {
                             }
                         }
                         .accessibilityLabel("Photo gallery")
-                        .accessibilityHint("Opens the photo gallery")
+                        .accessibilityHint("Opens the Photos app")
                         .frame(maxWidth: .infinity)
                         
                         // Capture / Record Button
@@ -290,17 +291,17 @@ struct CameraView: View {
                             } label: {
                                 ZStack {
                                     Circle()
-                                        .stroke(.white, lineWidth: 3)
-                                        .frame(width: 80, height: 80)
+                                        .stroke(.white, lineWidth: 4)
+                                        .frame(width: 95, height: 95)
                                     
                                     if cameraManager.isRecording {
                                         RoundedRectangle(cornerRadius: 8)
                                             .fill(.red)
-                                            .frame(width: 32, height: 32)
+                                            .frame(width: 36, height: 36)
                                     } else {
                                         Circle()
                                             .fill(.red)
-                                            .frame(width: 70, height: 70)
+                                            .frame(width: 83, height: 83)
                                     }
                                 }
                             }
@@ -315,11 +316,11 @@ struct CameraView: View {
                                 ZStack {
                                     Circle()
                                         .fill(.white)
-                                        .frame(width: 70, height: 70)
+                                        .frame(width: 83, height: 83)
                                     
                                     Circle()
-                                        .stroke(.white, lineWidth: 3)
-                                        .frame(width: 80, height: 80)
+                                        .stroke(.white, lineWidth: 4)
+                                        .frame(width: 95, height: 95)
                                 }
                             }
                             .accessibilityLabel("Capture photo")
@@ -357,9 +358,6 @@ struct CameraView: View {
         .sheet(isPresented: $showingSettings) {
             CameraSettingsView(cameraManager: cameraManager)
         }
-        .sheet(isPresented: $showingGallery) {
-            GalleryView()
-        }
         .task {
             await cameraManager.checkAuthorization()
             if cameraManager.isAuthorized {
@@ -374,11 +372,18 @@ struct CameraView: View {
                 lastPhotoThumbnail = newImage
             }
         }
-        .onChange(of: showingGallery) { _, isShowing in
-            // Refresh thumbnail when gallery is dismissed (photo may have been deleted)
-            if !isShowing {
+        .onChange(of: cameraManager.lensPosition) { _, newPosition in
+            // Sync slider to actual lens position when autofocus is active
+            if cameraManager.isAutoFocusEnabled {
+                focusSliderValue = newPosition
+            }
+        }
+        .onChange(of: cameraManager.showCaptureFlash) { _, show in
+            if show {
+                // Reset the flag after a brief moment
                 Task {
-                    await loadLatestThumbnail()
+                    try? await Task.sleep(for: .seconds(0.15))
+                    cameraManager.showCaptureFlash = false
                 }
             }
         }

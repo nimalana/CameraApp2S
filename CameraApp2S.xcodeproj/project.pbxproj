@@ -8,7 +8,6 @@
 
 /* Begin PBXFileReference section */
 		C4DB656F2F6766D100BCFC8A /* CameraApp2S.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CameraApp2S.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		C4F8ACF12F832557008B04EF /* ImageEnhancementManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEnhancementManagerTests.swift; sourceTree = "<group>"; };
 		C4F8ACF22F832560008B04EF /* CameraManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraManagerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -51,7 +50,6 @@
 		C4F8ACF02F832546008B04EF /* CameraApp2STests */ = {
 			isa = PBXGroup;
 			children = (
-				C4F8ACF12F832557008B04EF /* ImageEnhancementManagerTests.swift */,
 				C4F8ACF22F832560008B04EF /* CameraManagerTests.swift */,
 			);
 			path = CameraApp2STests;
@@ -190,7 +188,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -248,7 +246,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -268,6 +266,7 @@
 				DEVELOPMENT_TEAM = 2QJ4KU8957;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Microscope Camera";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Microscope Camera needs camera access to capture images and videos.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microscope Camera needs microphone access to record audio.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Microscope Camera needs permission to save captured images and videos to your photo library.";
@@ -304,6 +303,7 @@
 				DEVELOPMENT_TEAM = 2QJ4KU8957;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Microscope Camera";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Microscope Camera needs camera access to capture images and videos.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microscope Camera needs microphone access to record audio.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Microscope Camera needs permission to save captured images and videos to your photo library.";

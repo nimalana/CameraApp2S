@@ -7,7 +7,6 @@
 
 import SwiftUI
 import AVFoundation
-import Combine
 
 /// Settings panel for camera configuration
 @MainActor
@@ -19,16 +18,12 @@ struct CameraSettingsView: View {
         NavigationStack {
             List {
                 Section("Focus") {
-                    Picker("Focus Mode", selection: focusMode) {
-                        Text("Continuous Auto").tag(AVCaptureDevice.FocusMode.continuousAutoFocus)
-                        Text("Auto Focus").tag(AVCaptureDevice.FocusMode.autoFocus)
-                        Text("Locked").tag(AVCaptureDevice.FocusMode.locked)
-                    }
-                    .onChange(of: focusMode.wrappedValue) { _, newValue in
-                        cameraManager.setFocusMode(newValue)
-                    }
+                    Toggle("Auto Focus", isOn: Binding(
+                        get: { cameraManager.isAutoFocusEnabled },
+                        set: { cameraManager.setAutoFocus($0) }
+                    ))
                     
-                    Toggle("Lock Focus & Exposure", isOn: Binding(
+                    Toggle("Lock AE/AF", isOn: Binding(
                         get: { cameraManager.isLocked },
                         set: { isLocked in
                             if isLocked {
@@ -53,10 +48,26 @@ struct CameraSettingsView: View {
                 }
                 
                 Section("Image Quality") {
-                    Text("High Quality Mode")
-                    Text("Photo resolution optimized for microscope imaging")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Picker("Photo Quality", selection: $cameraManager.photoQuality) {
+                        ForEach(PhotoQuality.allCases) { quality in
+                            Text(quality.rawValue).tag(quality)
+                        }
+                    }
+                    
+                    switch cameraManager.photoQuality {
+                    case .high:
+                        Text("Best quality, larger file size. Recommended for microscope imaging.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .medium:
+                        Text("Balanced quality and file size.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .low:
+                        Text("Smallest file size, faster capture. Lower detail.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 
                 Section("About") {
@@ -74,13 +85,6 @@ struct CameraSettingsView: View {
                 }
             }
         }
-    }
-    
-    private var focusMode: Binding<AVCaptureDevice.FocusMode> {
-        Binding(
-            get: { cameraManager.focusMode },
-            set: { _ in }
-        )
     }
 }
 

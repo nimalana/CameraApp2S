@@ -10,6 +10,15 @@ import UIKit
 import SwiftUI
 import Combine
 
+/// Photo quality presets
+enum PhotoQuality: String, CaseIterable, Identifiable {
+    case high = "High"
+    case medium = "Medium"
+    case low = "Low"
+    
+    var id: String { rawValue }
+}
+
 /// Main camera manager for microscope functionality
 @MainActor
 final class CameraManager: NSObject, ObservableObject {
@@ -19,7 +28,7 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var isRecording = false
     @Published var focusMode: AVCaptureDevice.FocusMode = .continuousAutoFocus
     @Published var exposureMode: AVCaptureDevice.ExposureMode = .continuousAutoExposure
-    @Published var isLocked = true
+    @Published var isLocked = false
     @Published var currentZoomFactor: CGFloat = 1.0
     @Published var maxZoomFactor: CGFloat = 1.0
     @Published var capturedImage: UIImage?
@@ -28,9 +37,12 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var currentCameraName: String = ""
     @Published var errorMessage: String?
     @Published var lensPosition: Float = 0.5
-    @Published var isManualFocus = false
+    @Published var isAutoFocusEnabled = true
+    @Published var supportsFocus = true
     @Published var isVideoMode = false
     @Published var recordingDuration: TimeInterval = 0
+    @Published var photoQuality: PhotoQuality = .high
+    @Published var showCaptureFlash = false
     
     private var recordingTimer: Timer?
     
@@ -49,6 +61,7 @@ final class CameraManager: NSObject, ObservableObject {
     // KVO observations for autofocus/autoexposure completion
     private var focusObservation: NSKeyValueObservation?
     private var exposureObservation: NSKeyValueObservation?
+    private var lensPositionObservation: NSKeyValueObservation?
     
     override init() {
         super.init()
@@ -225,6 +238,9 @@ final class CameraManager: NSObject, ObservableObject {
                     
                     strongSelf.captureSession.commitConfiguration()
                     
+                    let deviceSupportsFocus = videoDevice.isFocusModeSupported(.continuousAutoFocus) ||
+                        videoDevice.isFocusModeSupported(.autoFocus)
+                    
                     Task { @MainActor [weak self] in
                         guard let self else { return }
                         self.maxZoomFactor = min(videoDevice.activeFormat.videoMaxZoomFactor, 10.0)
@@ -232,7 +248,11 @@ final class CameraManager: NSObject, ObservableObject {
                         self.isCameraReady = true
                         self.isUsingFrontCamera = videoDevice.position == .front
                         self.currentCameraName = CameraManager.displayName(for: videoDevice)
-                        self.isManualFocus = false
+                        self.supportsFocus = deviceSupportsFocus
+                        self.isAutoFocusEnabled = deviceSupportsFocus
+                        self.lensPosition = videoDevice.lensPosition
+                        // Observe hardware lens position so the slider tracks autofocus
+                        self.observeLensPosition(device: videoDevice)
                         // Lock AE/AF once autofocus finishes acquiring
                         self.observeAndLockWhenReady(device: videoDevice)
                     }
@@ -346,11 +366,27 @@ final class CameraManager: NSObject, ObservableObject {
         return captureSession
     }
     
+    // MARK: - Lens Position Observation
+    
+    /// Observe the hardware lens position via KVO so the slider tracks autofocus movements
+    private func observeLensPosition(device: AVCaptureDevice) {
+        lensPositionObservation?.invalidate()
+        lensPositionObservation = device.observe(\.lensPosition, options: [.new]) { [weak self] _, change in
+            guard let newPosition = change.newValue else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.isAutoFocusEnabled else { return }
+                self.lensPosition = newPosition
+            }
+        }
+    }
+    
     // MARK: - Focus Control
     
-    /// Sets the lens to a specific position (0.0 = nearest, 1.0 = farthest)
+    /// Sets the lens to a specific position (0.0 = nearest, 1.0 = farthest).
+    /// Only works when autofocus is disabled.
     func setManualFocusPosition(_ position: Float) {
-        guard let device = videoDevice else { return }
+        guard !isAutoFocusEnabled else { return }
+        guard let device = videoDevice, isCameraReady else { return }
         
         let clampedPosition = min(max(position, 0.0), 1.0)
         
@@ -362,7 +398,6 @@ final class CameraManager: NSObject, ObservableObject {
                 
                 Task { @MainActor [weak self] in
                     self?.lensPosition = clampedPosition
-                    self?.isManualFocus = true
                     self?.focusMode = .locked
                 }
             } catch {
@@ -371,26 +406,47 @@ final class CameraManager: NSObject, ObservableObject {
         }
     }
     
-    /// Returns to continuous autofocus from manual focus
-    func resetToAutoFocus() {
-        guard let device = videoDevice else { return }
+    /// Toggles autofocus on or off. When turning off, the lens stays at its current position.
+    func setAutoFocus(_ enabled: Bool) {
+        guard let device = videoDevice, supportsFocus else { return }
         
-        sessionQueue.async { [weak self] in
-            do {
-                try device.lockForConfiguration()
-                
-                if device.isFocusModeSupported(.continuousAutoFocus) {
-                    device.focusMode = .continuousAutoFocus
+        isAutoFocusEnabled = enabled
+        
+        if enabled {
+            // Switch to continuous autofocus
+            sessionQueue.async { [weak self] in
+                do {
+                    try device.lockForConfiguration()
+                    if device.isFocusModeSupported(.continuousAutoFocus) {
+                        device.focusMode = .continuousAutoFocus
+                    }
+                    let pos = device.lensPosition
+                    device.unlockForConfiguration()
+                    
+                    Task { @MainActor [weak self] in
+                        self?.lensPosition = pos
+                        self?.focusMode = .continuousAutoFocus
+                    }
+                } catch {
+                    print("Error enabling autofocus: \(error.localizedDescription)")
                 }
-                
-                device.unlockForConfiguration()
-                
-                Task { @MainActor [weak self] in
-                    self?.isManualFocus = false
-                    self?.focusMode = .continuousAutoFocus
+            }
+        } else {
+            // Lock focus at current position for manual slider control
+            sessionQueue.async { [weak self] in
+                do {
+                    try device.lockForConfiguration()
+                    let currentPos = device.lensPosition
+                    device.setFocusModeLocked(lensPosition: currentPos)
+                    device.unlockForConfiguration()
+                    
+                    Task { @MainActor [weak self] in
+                        self?.lensPosition = currentPos
+                        self?.focusMode = .locked
+                    }
+                } catch {
+                    print("Error disabling autofocus: \(error.localizedDescription)")
                 }
-            } catch {
-                print("Error resetting to autofocus: \(error.localizedDescription)")
             }
         }
     }
@@ -442,7 +498,6 @@ final class CameraManager: NSObject, ObservableObject {
                 Task { @MainActor [weak self] in
                     self?.focusMode = .autoFocus
                     self?.isLocked = false
-                    self?.isManualFocus = false
                 }
             } catch {
                 print("Error setting focus point: \(error.localizedDescription)")
@@ -499,7 +554,6 @@ final class CameraManager: NSObject, ObservableObject {
                 
                 Task { @MainActor [weak self] in
                     self?.isLocked = true
-                    self?.focusMode = .locked
                 }
             } catch {
                 print("Error locking focus: \(error.localizedDescription)")
@@ -509,14 +563,18 @@ final class CameraManager: NSObject, ObservableObject {
     
     func unlockFocus() {
         guard let device = videoDevice else { return }
+        let autoFocus = isAutoFocusEnabled
         
         sessionQueue.async { [weak self] in
             do {
                 try device.lockForConfiguration()
                 
-                if device.isFocusModeSupported(.continuousAutoFocus) {
-                    device.focusMode = .continuousAutoFocus
+                if autoFocus {
+                    if device.isFocusModeSupported(.continuousAutoFocus) {
+                        device.focusMode = .continuousAutoFocus
+                    }
                 }
+                // If autofocus is off, leave focus locked at current position
                 
                 if device.isExposureModeSupported(.continuousAutoExposure) {
                     device.exposureMode = .continuousAutoExposure
@@ -526,7 +584,6 @@ final class CameraManager: NSObject, ObservableObject {
                 
                 Task { @MainActor [weak self] in
                     self?.isLocked = false
-                    self?.focusMode = .continuousAutoFocus
                 }
             } catch {
                 print("Error unlocking focus: \(error.localizedDescription)")
@@ -611,16 +668,26 @@ final class CameraManager: NSObject, ObservableObject {
     func capturePhoto() {
         guard let photoOutput = photoOutput else { return }
         
+        // Trigger capture flash feedback
+        showCaptureFlash = true
+        
+        let quality = photoQuality
         let output = photoOutput // local copy to avoid capturing nonisolated(unsafe) property
         sessionQueue.async { [weak self] in
             var photoSettings = AVCapturePhotoSettings()
             
-            // Use highest quality settings for microscope imaging
             if output.availablePhotoCodecTypes.contains(.hevc) {
                 photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
             }
             
-            photoSettings.photoQualityPrioritization = .quality
+            switch quality {
+            case .high:
+                photoSettings.photoQualityPrioritization = .quality
+            case .medium:
+                photoSettings.photoQualityPrioritization = .balanced
+            case .low:
+                photoSettings.photoQualityPrioritization = .speed
+            }
             
             if let strongSelf = self {
                 output.capturePhoto(with: photoSettings, delegate: strongSelf)
