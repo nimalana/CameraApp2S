@@ -18,11 +18,6 @@ struct CameraSettingsView: View {
         NavigationStack {
             List {
                 Section("Focus") {
-                    Toggle("Auto Focus", isOn: Binding(
-                        get: { cameraManager.isAutoFocusEnabled },
-                        set: { cameraManager.setAutoFocus($0) }
-                    ))
-                    
                     Toggle("Lock AE/AF", isOn: Binding(
                         get: { cameraManager.isLocked },
                         set: { isLocked in
@@ -33,6 +28,10 @@ struct CameraSettingsView: View {
                             }
                         }
                     ))
+                    
+                    Text("Touch the focus slider for manual focus. Tap the screen to return to autofocus.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 
                 Section("Zoom") {
@@ -70,9 +69,54 @@ struct CameraSettingsView: View {
                     }
                 }
                 
+                Section("Photo Format") {
+                    Picker("Format", selection: $cameraManager.photoFormat) {
+                        ForEach(PhotoFormat.allCases) { format in
+                            Text(format.rawValue).tag(format)
+                        }
+                    }
+                    
+                    switch cameraManager.photoFormat {
+                    case .jpeg:
+                        Text("Universal format — viewable and shareable on any device.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .heic:
+                        Text("Smaller files at similar quality, but not supported on all devices.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                
                 Section("About") {
                     LabeledContent("App Version", value: "1.0.0")
                     LabeledContent("Purpose", value: "Microscope Imaging")
+                }
+
+                Section("Intended Use") {
+                    Text("For educational and hobbyist use only. Not intended for clinical, diagnostic, or medical purposes.")
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                    Text("Image fidelity depends on the microscope, adapter, alignment, and lighting. The app applies no transformation or extra magnification beyond what the iPhone camera natively performs.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Section("Credits") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Design")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Nimalan Arulvelan and Bob Goldstein")
+                            .font(.subheadline)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Developer")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Nimalan Arulvelan")
+                            .font(.subheadline)
+                    }
                 }
             }
             .navigationTitle("Camera Settings")

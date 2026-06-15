@@ -23,6 +23,7 @@ struct CameraView: View {
                 CameraPreviewView(
                     session: cameraManager.getCaptureSession(),
                     onTap: { point in
+                        // Tapping the screen re-enables autofocus at the tapped point
                         cameraManager.setFocusPoint(point)
                     },
                     onPinchZoom: { delta in
@@ -95,8 +96,8 @@ struct CameraView: View {
                     .allowsHitTesting(false)
             }
             
-            // Vertical focus slider on right edge — only show for cameras that support focus
-            if cameraManager.supportsFocus {
+            // Vertical focus slider on right edge — show for all rear cameras
+            if !cameraManager.isUsingFrontCamera {
                 HStack {
                     Spacer()
                     VStack(spacing: 6) {
@@ -111,13 +112,15 @@ struct CameraView: View {
                             onChanged: { newValue in
                                 cameraManager.setManualFocusPosition(newValue)
                             },
-                            onToggleAutoFocus: {
-                                cameraManager.setAutoFocus(!cameraManager.isAutoFocusEnabled)
+                            onManualFocusStarted: {
+                                // Sync slider to current hardware lens position, then switch to manual
+                                let currentPos = cameraManager.startManualFocus()
+                                focusSliderValue = currentPos
                             }
                         )
                         .accessibilityLabel("Focus")
                         .accessibilityValue("\(Int(focusSliderValue * 100)) percent")
-                        .accessibilityHint(cameraManager.isAutoFocusEnabled ? "Autofocus active" : "Drag to adjust manual focus")
+                        .accessibilityHint(cameraManager.isAutoFocusEnabled ? "Touch to switch to manual focus" : "Drag to adjust manual focus")
                         
                         Image(systemName: "mountain.2")
                             .font(.caption)
@@ -143,21 +146,19 @@ struct CameraView: View {
                             } label: {
                                 Label(
                                     CameraManager.displayName(for: camera),
-                                    systemImage: camera.position == .front ? "camera.front.fill" : "camera.fill"
+                                    systemImage: "camera.fill"
                                 )
                             }
                         }
                     } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "camera.rotate.fill")
-                                .font(.title2)
-                        }
-                        .foregroundStyle(.white)
-                        .padding()
-                        .background(.ultraThinMaterial, in: Circle())
+                        Image(systemName: "camera.aperture")
+                            .font(.title2)
+                            .foregroundStyle(.white)
+                            .padding()
+                            .background(.ultraThinMaterial, in: Circle())
                     }
-                    .accessibilityLabel("Select camera")
-                    .accessibilityHint("Choose from available cameras")
+                    .accessibilityLabel("Select lens")
+                    .accessibilityHint("Choose from available camera lenses")
                     
                     Spacer()
                     
@@ -224,16 +225,15 @@ struct CameraView: View {
                     }
                     
                     // Photo / Video mode toggle
-                    HStack(spacing: 24) {
+                    HStack(spacing: 32) {
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 cameraManager.isVideoMode = false
                             }
                         } label: {
-                            Text("Photo")
-                                .font(.subheadline)
-                                .fontWeight(cameraManager.isVideoMode ? .regular : .bold)
-                                .foregroundStyle(cameraManager.isVideoMode ? .white.opacity(0.6) : .yellow)
+                            Text("PHOTO")
+                                .font(.system(size: 16, weight: cameraManager.isVideoMode ? .medium : .bold))
+                                .foregroundStyle(cameraManager.isVideoMode ? .white.opacity(0.5) : .yellow)
                         }
                         
                         Button {
@@ -241,10 +241,9 @@ struct CameraView: View {
                                 cameraManager.isVideoMode = true
                             }
                         } label: {
-                            Text("Video")
-                                .font(.subheadline)
-                                .fontWeight(cameraManager.isVideoMode ? .bold : .regular)
-                                .foregroundStyle(cameraManager.isVideoMode ? .yellow : .white.opacity(0.6))
+                            Text("VIDEO")
+                                .font(.system(size: 16, weight: cameraManager.isVideoMode ? .bold : .medium))
+                                .foregroundStyle(cameraManager.isVideoMode ? .yellow : .white.opacity(0.5))
                         }
                     }
                     
@@ -370,6 +369,12 @@ struct CameraView: View {
             // Use the captured image directly as thumbnail for instant update
             if let newImage {
                 lastPhotoThumbnail = newImage
+            }
+        }
+        .onChange(of: cameraManager.lastSavedMediaDate) { _, _ in
+            // Refresh thumbnail from photo library after any media is saved (photo or video)
+            Task {
+                await loadLatestThumbnail()
             }
         }
         .onChange(of: cameraManager.lensPosition) { _, newPosition in

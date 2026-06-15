@@ -56,6 +56,29 @@ class PhotoLibraryManager: ObservableObject {
         }
     }
     
+    /// Save the original photo data (JPEG/HEIC) preserving full resolution and metadata.
+    func saveImageData(_ data: Data, fileExtension: String) async {
+        // Write the raw data to a temp file first, then add it as a resource so
+        // the original encoding and quality survive the import.
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(fileExtension)
+        
+        do {
+            try data.write(to: tempURL)
+            try await PHPhotoLibrary.shared().performChanges {
+                let request = PHAssetCreationRequest.forAsset()
+                let options = PHAssetResourceCreationOptions()
+                options.shouldMoveFile = true
+                request.addResource(with: .photo, fileURL: tempURL, options: options)
+                request.creationDate = Date()
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: tempURL)
+            errorMessage = "Failed to save photo: \(error.localizedDescription)"
+        }
+    }
+    
     // MARK: - Save Video
     
     func saveVideo(at url: URL) async {

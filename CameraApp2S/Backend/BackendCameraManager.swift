@@ -19,6 +19,29 @@ enum PhotoQuality: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Photo file format. JPEG is the default for universal compatibility;
+/// HEIC produces smaller files but isn't readable on every platform.
+enum PhotoFormat: String, CaseIterable, Identifiable {
+    case jpeg = "JPEG"
+    case heic = "HEIC"
+    
+    var id: String { rawValue }
+    
+    var fileExtension: String {
+        switch self {
+        case .jpeg: return "jpg"
+        case .heic: return "heic"
+        }
+    }
+    
+    var uti: String {
+        switch self {
+        case .jpeg: return "public.jpeg"
+        case .heic: return "public.heic"
+        }
+    }
+}
+
 /// Main camera manager for microscope functionality
 @MainActor
 final class CameraManager: NSObject, ObservableObject {
@@ -42,7 +65,9 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var isVideoMode = false
     @Published var recordingDuration: TimeInterval = 0
     @Published var photoQuality: PhotoQuality = .high
+    @Published var photoFormat: PhotoFormat = .jpeg
     @Published var showCaptureFlash = false
+    @Published var lastSavedMediaDate = Date()
     
     private var recordingTimer: Timer?
     
@@ -150,7 +175,9 @@ final class CameraManager: NSObject, ObservableObject {
             mediaType: .video,
             position: .unspecified
         )
-        availableCameras = discoverySession.devices
+        availableCameras = discoverySession.devices.sorted {
+            CameraManager.sortPriority(for: $0) < CameraManager.sortPriority(for: $1)
+        }
         
         guard let defaultDevice = AVCaptureDevice.default(for: .video) else {
             isCameraAvailable = false
@@ -181,8 +208,10 @@ final class CameraManager: NSObject, ObservableObject {
                     strongSelf.captureSession.removeInput(existingAudio)
                 }
                 
-                // Use high preset that supports both photo and video
-                strongSelf.captureSession.sessionPreset = .high
+                // Use .photo preset so AVCapturePhotoOutput gets the sensor's
+                // full still-image resolution. Video recording still works at
+                // the active format's natural resolution.
+                strongSelf.captureSession.sessionPreset = .photo
                 
                 strongSelf.videoDevice = videoDevice
                 
@@ -203,6 +232,15 @@ final class CameraManager: NSObject, ObservableObject {
                             strongSelf.captureSession.addOutput(photoOutput)
                             strongSelf.photoOutput = photoOutput
                         }
+                    }
+                    
+                    // Ask the photo output to use the largest still-image
+                    // dimensions the current device format supports. Without
+                    // this, captures fall back to a smaller default and the
+                    // resulting JPEGs are only ~hundreds of KB.
+                    if let photoOutput = strongSelf.photoOutput,
+                       let maxDim = videoDevice.activeFormat.supportedMaxPhotoDimensions.last {
+                        photoOutput.maxPhotoDimensions = maxDim
                     }
                     
                     // Add movie file output for video recording
@@ -239,11 +277,12 @@ final class CameraManager: NSObject, ObservableObject {
                     strongSelf.captureSession.commitConfiguration()
                     
                     let deviceSupportsFocus = videoDevice.isFocusModeSupported(.continuousAutoFocus) ||
-                        videoDevice.isFocusModeSupported(.autoFocus)
+                        videoDevice.isFocusModeSupported(.autoFocus) ||
+                        videoDevice.isFocusModeSupported(.locked)
                     
                     Task { @MainActor [weak self] in
                         guard let self else { return }
-                        self.maxZoomFactor = min(videoDevice.activeFormat.videoMaxZoomFactor, 10.0)
+                        self.maxZoomFactor = min(videoDevice.activeFormat.videoMaxZoomFactor, 7.0)
                         self.currentZoomFactor = 1.0
                         self.isCameraReady = true
                         self.isUsingFrontCamera = videoDevice.position == .front
@@ -282,26 +321,53 @@ final class CameraManager: NSObject, ObservableObject {
         await configureSession(with: device)
     }
     
-    /// Human-readable name for a camera device
+    /// Human-readable name for a camera device, matching the labels used by
+    /// the native Camera app where possible.
     static func displayName(for device: AVCaptureDevice) -> String {
-        let position = device.position == .front ? "Front" : "Rear"
+        if device.position == .front {
+            return "Front Camera"
+        }
         switch device.deviceType {
-        case .builtInWideAngleCamera:
-            return "\(position) Wide"
-        case .builtInTelephotoCamera:
-            return "\(position) Telephoto"
         case .builtInUltraWideCamera:
-            return "\(position) Ultra Wide"
+            return "0.5x lens"
+        case .builtInWideAngleCamera:
+            return "1x lens"
+        case .builtInTelephotoCamera:
+            return "Telephoto lens"
         case .builtInDualCamera:
-            return "\(position) Dual"
+            return "Dual lens"
         case .builtInTripleCamera:
-            return "\(position) Triple"
+            return "Triple lens"
         default:
-            return "\(position) \(device.localizedName)"
+            return device.localizedName
         }
     }
     
-    /// Observe autofocus/autoexposure completion via KVO, then lock AE/AF
+    /// Sort order for camera selection: 1x first, then higher-power lenses
+    /// (telephoto/dual/triple), then 0.5x ultra-wide, then any front cameras.
+    private static func sortPriority(for device: AVCaptureDevice) -> Int {
+        if device.position == .front {
+            return 100 // Front cameras last
+        }
+        switch device.deviceType {
+        case .builtInWideAngleCamera:
+            return 0  // 1x
+        case .builtInTelephotoCamera:
+            return 1  // Higher power
+        case .builtInDualCamera:
+            return 2
+        case .builtInTripleCamera:
+            return 3
+        case .builtInUltraWideCamera:
+            return 10 // 0.5x — after higher-power lenses
+        default:
+            return 50
+        }
+    }
+    
+    /// Observe autofocus/autoexposure completion via KVO on initial camera setup.
+    /// This does NOT set the user-visible `isLocked` flag — the lock indicator
+    /// should only appear when the user explicitly taps the lock button.
     private func observeAndLockWhenReady(device: AVCaptureDevice) {
         // Cancel any existing observations
         focusObservation?.invalidate()
@@ -315,11 +381,10 @@ final class CameraManager: NSObject, ObservableObject {
             guard focusSettled, exposureSettled else { return }
             self?.focusObservation?.invalidate()
             self?.exposureObservation?.invalidate()
-            self?.lockFocus()
+            // Don't set isLocked — this is an internal initial settle, not a user action
         }
         
         if focusSettled && exposureSettled {
-            lockFocus()
             return
         }
         
@@ -382,11 +447,37 @@ final class CameraManager: NSObject, ObservableObject {
     
     // MARK: - Focus Control
     
+    /// Switches to manual focus, syncing the slider to the current hardware
+    /// lens position first so the first drag movement responds correctly.
+    /// Returns the current lens position for the caller to sync its slider.
+    func startManualFocus() -> Float {
+        guard let device = videoDevice else { return lensPosition }
+        // Some lenses (e.g. fixed-focus ultra-wides on certain devices) don't
+        // support locked focus mode — calling setFocusModeLocked would crash.
+        guard device.isFocusModeSupported(.locked) else { return device.lensPosition }
+        
+        let currentPos = device.lensPosition
+        isAutoFocusEnabled = false
+        lensPosition = currentPos
+        
+        sessionQueue.async {
+            do {
+                try device.lockForConfiguration()
+                device.setFocusModeLocked(lensPosition: currentPos)
+                device.unlockForConfiguration()
+            } catch {
+                print("Error starting manual focus: \(error.localizedDescription)")
+            }
+        }
+        
+        return currentPos
+    }
+    
     /// Sets the lens to a specific position (0.0 = nearest, 1.0 = farthest).
     /// Only works when autofocus is disabled.
     func setManualFocusPosition(_ position: Float) {
-        guard !isAutoFocusEnabled else { return }
         guard let device = videoDevice, isCameraReady else { return }
+        guard device.isFocusModeSupported(.locked) else { return }
         
         let clampedPosition = min(max(position, 0.0), 1.0)
         
@@ -433,6 +524,7 @@ final class CameraManager: NSObject, ObservableObject {
             }
         } else {
             // Lock focus at current position for manual slider control
+            guard device.isFocusModeSupported(.locked) else { return }
             sessionQueue.async { [weak self] in
                 do {
                     try device.lockForConfiguration()
@@ -498,6 +590,7 @@ final class CameraManager: NSObject, ObservableObject {
                 Task { @MainActor [weak self] in
                     self?.focusMode = .autoFocus
                     self?.isLocked = false
+                    self?.isAutoFocusEnabled = true
                 }
             } catch {
                 print("Error setting focus point: \(error.localizedDescription)")
@@ -527,6 +620,7 @@ final class CameraManager: NSObject, ObservableObject {
                 
                 Task { @MainActor [weak self] in
                     self?.focusMode = .continuousAutoFocus
+                    self?.isAutoFocusEnabled = true
                 }
             } catch {
                 print("Error resuming continuous autofocus: \(error.localizedDescription)")
@@ -672,22 +766,31 @@ final class CameraManager: NSObject, ObservableObject {
         showCaptureFlash = true
         
         let quality = photoQuality
+        let format = photoFormat
         let output = photoOutput // local copy to avoid capturing nonisolated(unsafe) property
         sessionQueue.async { [weak self] in
-            var photoSettings = AVCapturePhotoSettings()
+            let photoSettings: AVCapturePhotoSettings
             
-            if output.availablePhotoCodecTypes.contains(.hevc) {
-                photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
+            switch format {
+            case .heic:
+                if output.availablePhotoCodecTypes.contains(.hevc) {
+                    photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
+                } else {
+                    photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+                }
+            case .jpeg:
+                photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
             }
             
-            switch quality {
-            case .high:
-                photoSettings.photoQualityPrioritization = .quality
-            case .medium:
-                photoSettings.photoQualityPrioritization = .balanced
-            case .low:
-                photoSettings.photoQualityPrioritization = .speed
-            }
+            // Always capture with .quality so Apple's image pipeline produces
+            // the best base image. The user's High/Medium/Low setting is
+            // applied as a separate re-compression step in the delegate so
+            // file sizes are predictable and form a real gradient.
+            photoSettings.photoQualityPrioritization = .quality
+            
+            // Match the photo output's max dimensions so each capture is taken
+            // at the sensor's full resolution rather than a smaller default.
+            photoSettings.maxPhotoDimensions = output.maxPhotoDimensions
             
             if let strongSelf = self {
                 output.capturePhoto(with: photoSettings, delegate: strongSelf)
@@ -707,19 +810,75 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
             return
         }
         
-        guard let imageData = photo.fileDataRepresentation(),
-              let image = UIImage(data: imageData) else {
+        guard let imageData = photo.fileDataRepresentation() else {
             Task { @MainActor in
                 self.errorMessage = "Unable to process captured photo"
             }
             return
         }
         
+        // UIImage is used only for the on-screen thumbnail. The library save
+        // uses the raw imageData (re-compressed for Medium/Low) so we control
+        // the resulting file size directly.
+        let thumbnail = UIImage(data: imageData)
+        
         Task { @MainActor in
-            self.capturedImage = image
-            // Save to photo library
-            await PhotoLibraryManager.shared.saveImage(image)
+            self.capturedImage = thumbnail
+            let quality = self.photoQuality
+            let format = self.photoFormat
+            let ext = format.fileExtension
+            
+            let finalData: Data
+            switch quality {
+            case .high:
+                // Save the pristine sensor output, no re-encoding.
+                finalData = imageData
+            case .medium:
+                finalData = CameraManager.recompress(imageData, format: format, quality: 0.55) ?? imageData
+            case .low:
+                finalData = CameraManager.recompress(imageData, format: format, quality: 0.25) ?? imageData
+            }
+            
+            await PhotoLibraryManager.shared.saveImageData(finalData, fileExtension: ext)
+            self.lastSavedMediaDate = Date()
         }
+    }
+    
+    /// Re-encodes the captured image at the given quality factor. Returns nil
+    /// if the source can't be decoded or the destination can't be created.
+    nonisolated static func recompress(_ data: Data, format: PhotoFormat, quality: CGFloat) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            return nil
+        }
+        
+        // Preserve EXIF / orientation metadata from the original
+        let metadata = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
+        
+        let destinationType: CFString
+        switch format {
+        case .jpeg:
+            destinationType = "public.jpeg" as CFString
+        case .heic:
+            destinationType = "public.heic" as CFString
+        }
+        
+        let mutableData = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            mutableData,
+            destinationType,
+            1,
+            nil
+        ) else {
+            return nil
+        }
+        
+        var properties = metadata
+        properties[kCGImageDestinationLossyCompressionQuality] = quality
+        
+        CGImageDestinationAddImage(destination, cgImage, properties as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return mutableData as Data
     }
 }
 
@@ -743,6 +902,9 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
             
             // Clean up temp file after saving
             try? FileManager.default.removeItem(at: outputFileURL)
+            
+            // Signal that new media was saved so thumbnail can refresh
+            self.lastSavedMediaDate = Date()
         }
     }
 }
