@@ -123,14 +123,19 @@ Add the following keys to your Info.plist:
 
 ```xml
 <key>NSCameraUsageDescription</key>
-<string>This app requires camera access to capture microscope images with enhanced quality and focus control.</string>
+<string>Access to the camera is used to capture photos and videos through a microscope eyepiece adapter -- for example, recording a specimen on a slide so you can review it later. Captured media is stored only on your device unless you choose to share it.</string>
+
+<key>NSMicrophoneUsageDescription</key>
+<string>Access to the microphone is used to record audio alongside video -- for example, narrating what you are observing through the microscope while recording. Audio is stored only in the video files you save and is never transmitted off the device.</string>
 
 <key>NSPhotoLibraryUsageDescription</key>
-<string>This app needs access to your photo library to save and view microscope images.</string>
+<string>Access to your photo library is used to browse and review microscope photos and videos you have previously captured with this app -- for example, comparing today's specimen against one you recorded last week.</string>
 
 <key>NSPhotoLibraryAddUsageDescription</key>
-<string>This app needs permission to save captured microscope images to your photo library.</string>
+<string>Permission to add to your photo library is used to save the photos and videos you capture in the app -- for example, saving a recording of a slide so you can revisit or share it later.</string>
 ```
+
+The public privacy policy is in `docs/privacy-policy.md`. It includes EU/EEA language for France and Italy, explains that the app does not collect personal data, and states that the app is for educational and general microscope imaging use rather than diagnostic or medical use.
 
 ### 2. Build Requirements
 - iOS 17.0 or later

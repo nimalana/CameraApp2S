@@ -10,9 +10,10 @@ The app will crash without these! Add to your Info.plist:
 2. Select your app target
 3. Go to "Info" tab
 4. Click "+" to add keys:
-   - **Privacy - Camera Usage Description**: "This app requires camera access to capture microscope images with enhanced quality and focus control."
-   - **Privacy - Photo Library Usage Description**: "This app needs access to your photo library to save and view microscope images."
-   - **Privacy - Photo Library Additions Usage Description**: "This app needs permission to save captured microscope images to your photo library."
+   - **Privacy - Camera Usage Description**: "Access to the camera is used to capture photos and videos through a microscope eyepiece adapter -- for example, recording a specimen on a slide so you can review it later. Captured media is stored only on your device unless you choose to share it."
+   - **Privacy - Microphone Usage Description**: "Access to the microphone is used to record audio alongside video -- for example, narrating what you are observing through the microscope while recording. Audio is stored only in the video files you save and is never transmitted off the device."
+   - **Privacy - Photo Library Usage Description**: "Access to your photo library is used to browse and review microscope photos and videos you have previously captured with this app -- for example, comparing today's specimen against one you recorded last week."
+   - **Privacy - Photo Library Additions Usage Description**: "Permission to add to your photo library is used to save the photos and videos you capture in the app -- for example, saving a recording of a slide so you can revisit or share it later."
 
 OR copy the contents from `Info-Privacy-Keys.plist` into your Info.plist file.
 
