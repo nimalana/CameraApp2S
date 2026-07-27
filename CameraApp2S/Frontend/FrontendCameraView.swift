@@ -235,8 +235,8 @@ struct CameraView: View {
                             Text("PHOTO")
                                 .font(.system(size: 16, weight: cameraManager.isVideoMode ? .medium : .bold))
                                 .foregroundStyle(cameraManager.isVideoMode ? .white.opacity(0.5) : .yellow)
-                                .padding(.horizontal, 24)
-                                .padding(.vertical, 12)
+                                .padding(.horizontal, 42)
+                                .padding(.vertical, 22)
                                 .contentShape(Rectangle())
                         }
                         
@@ -248,8 +248,8 @@ struct CameraView: View {
                             Text("VIDEO")
                                 .font(.system(size: 16, weight: cameraManager.isVideoMode ? .bold : .medium))
                                 .foregroundStyle(cameraManager.isVideoMode ? .yellow : .white.opacity(0.5))
-                                .padding(.horizontal, 24)
-                                .padding(.vertical, 12)
+                                .padding(.horizontal, 42)
+                                .padding(.vertical, 22)
                                 .contentShape(Rectangle())
                         }
                     }
