@@ -1,6 +1,6 @@
 //
-//  CameraApp2SApp.swift
-//  CameraApp2S
+//  MicroscopeViewerCameraApp.swift
+//  Microscope Viewer Camera
 //
 //  Created by Nimalan Arulvelan on 3/15/26.
 //
@@ -17,7 +17,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 }
 
 @main
-struct CameraApp2SApp: App {
+struct MicroscopeViewerCameraApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {

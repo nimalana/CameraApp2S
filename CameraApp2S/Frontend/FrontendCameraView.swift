@@ -1,6 +1,6 @@
 //
 //  CameraView.swift
-//  CameraApp2S
+//  Microscope Viewer Camera
 //
 //  Created by Nimalan Arulvelan on 3/15/26.
 //
@@ -15,6 +15,7 @@ struct CameraView: View {
     @State private var lastPhotoThumbnail: UIImage?
     @State private var showZoomIndicator = false
     @State private var focusSliderValue: Float = 0.5
+    @AppStorage("preventSleepWhileOpen") private var preventSleepWhileOpen = false
     
     var body: some View {
         ZStack {
@@ -234,6 +235,9 @@ struct CameraView: View {
                             Text("PHOTO")
                                 .font(.system(size: 16, weight: cameraManager.isVideoMode ? .medium : .bold))
                                 .foregroundStyle(cameraManager.isVideoMode ? .white.opacity(0.5) : .yellow)
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 12)
+                                .contentShape(Rectangle())
                         }
                         
                         Button {
@@ -244,6 +248,9 @@ struct CameraView: View {
                             Text("VIDEO")
                                 .font(.system(size: 16, weight: cameraManager.isVideoMode ? .bold : .medium))
                                 .foregroundStyle(cameraManager.isVideoMode ? .yellow : .white.opacity(0.5))
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 12)
+                                .contentShape(Rectangle())
                         }
                     }
                     
@@ -357,6 +364,9 @@ struct CameraView: View {
         .sheet(isPresented: $showingSettings) {
             CameraSettingsView(cameraManager: cameraManager)
         }
+        .onAppear {
+            updateIdleTimer()
+        }
         .task {
             await cameraManager.checkAuthorization()
             if cameraManager.isAuthorized {
@@ -372,9 +382,12 @@ struct CameraView: View {
             }
         }
         .onChange(of: cameraManager.lastSavedMediaDate) { _, _ in
-            // Refresh thumbnail from photo library after any media is saved (photo or video)
+            // Refresh thumbnail from the photo library after any media is saved
+            // without clearing the existing thumbnail if Photos is still indexing.
             Task {
-                await loadLatestThumbnail()
+                await loadLatestThumbnail(keepExistingOnFailure: true)
+                try? await Task.sleep(for: .seconds(0.6))
+                await loadLatestThumbnail(keepExistingOnFailure: true)
             }
         }
         .onChange(of: cameraManager.lensPosition) { _, newPosition in
@@ -394,6 +407,10 @@ struct CameraView: View {
         }
         .onDisappear {
             cameraManager.stopSession()
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+        .onChange(of: preventSleepWhileOpen) { _, _ in
+            updateIdleTimer()
         }
         .onChange(of: cameraManager.currentZoomFactor) { _, _ in
             showZoomIndicator = true
@@ -423,15 +440,23 @@ struct CameraView: View {
         }
     }
     
-    private func loadLatestThumbnail() async {
+    private func loadLatestThumbnail(keepExistingOnFailure: Bool = false) async {
         await PhotoLibraryManager.shared.checkAuthorization()
-        lastPhotoThumbnail = await PhotoLibraryManager.shared.loadLatestPhotoThumbnail()
+        if let thumbnail = await PhotoLibraryManager.shared.loadLatestPhotoThumbnail() {
+            lastPhotoThumbnail = thumbnail
+        } else if !keepExistingOnFailure {
+            lastPhotoThumbnail = nil
+        }
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private func updateIdleTimer() {
+        UIApplication.shared.isIdleTimerDisabled = preventSleepWhileOpen
     }
 }
 

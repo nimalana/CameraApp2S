@@ -1,6 +1,6 @@
 //
 //  FocusSliderView.swift
-//  CameraApp2S
+//  Microscope Viewer Camera
 //
 //  Custom vertical focus slider that spans most of the screen height
 //  with a uniform track color and smooth autofocus tracking.

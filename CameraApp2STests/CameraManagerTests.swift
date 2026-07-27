@@ -1,6 +1,6 @@
 //
 //  CameraManagerTests.swift
-//  CameraApp2STests
+//  Microscope Viewer Camera Tests
 //
 //  Created by Nimalan Arulvelan on 4/5/26.
 //

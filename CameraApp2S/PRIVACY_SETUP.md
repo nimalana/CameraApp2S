@@ -1,4 +1,4 @@
-# Privacy Configuration for CameraApp2S
+# Privacy Configuration for Microscope Viewer Camera
 
 ## Required Info.plist Keys
 

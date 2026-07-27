@@ -1,6 +1,6 @@
 //
 //  CameraSettingsView.swift
-//  CameraApp2S
+//  Microscope Viewer Camera
 //
 //  Created by Nimalan Arulvelan on 3/15/26.
 //
@@ -13,6 +13,7 @@ import AVFoundation
 struct CameraSettingsView: View {
     @ObservedObject var cameraManager: CameraManager
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("preventSleepWhileOpen") private var preventSleepWhileOpen = false
     
     var body: some View {
         NavigationStack {
@@ -87,6 +88,14 @@ struct CameraSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                Section("Display") {
+                    Toggle("Prevent Sleep While Open", isOn: $preventSleepWhileOpen)
+
+                    Text("Keeps the screen awake while the camera is open. The normal sleep timer resumes after leaving the app.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 
                 Section("About") {
                     LabeledContent("App Version", value: "1.0.0")
@@ -100,6 +109,16 @@ struct CameraSettingsView: View {
                     Text("Image fidelity depends on the microscope, adapter, alignment, and lighting. The app applies no transformation or extra magnification beyond what the iPhone camera natively performs.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+
+                Section("Microscope Mounting") {
+                    Link(destination: URL(string: "https://www.thingiverse.com/thing:1768834#files")!) {
+                        Label("3D-printable phone microscope adapter", systemImage: "link")
+                    }
+
+                    Link(destination: URL(string: "https://www.instructables.com/A-Cheap-Way-to-Stabilize-a-Phone-Camera-for-Micros/")!) {
+                        Label("Low-cost phone camera stabilizer guide", systemImage: "link")
+                    }
                 }
                 
                 Section("Credits") {

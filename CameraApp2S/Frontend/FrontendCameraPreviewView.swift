@@ -1,6 +1,6 @@
 //
 //  CameraPreviewView.swift
-//  CameraApp2S
+//  Microscope Viewer Camera
 //
 //  Created by Nimalan Arulvelan on 3/15/26.
 //
@@ -30,7 +30,7 @@ struct CameraPreviewView: UIViewRepresentable {
 class CameraPreviewUIView: UIView {
     var session: AVCaptureSession? {
         didSet {
-            guard let session = session else { return }
+            guard session !== oldValue, let session = session else { return }
             previewLayer.session = session
         }
     }

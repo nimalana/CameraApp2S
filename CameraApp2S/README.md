@@ -1,4 +1,4 @@
-# Microscope Camera App - Documentation
+# Microscope Viewer Camera App - Documentation
 
 ## Overview
 A professional camera application designed for smartphone-based microscope systems with advanced features including camera locking, enhanced image quality, auto/manual focusing, and an in-app camera roll.

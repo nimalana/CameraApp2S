@@ -1,7 +1,7 @@
 # Project Structure
 
 ```
-CameraApp2S/
+Microscope Viewer Camera/
 ├── Backend/                          # Business Logic Layer
 │   ├── CameraManager.swift           # Camera control & AVFoundation
 │   ├── PhotoLibraryManager.swift     # Photo library integration
@@ -25,7 +25,7 @@ CameraApp2S/
 ## Component Relationships
 
 ```
-CameraApp2SApp
+MicroscopeViewerCameraApp
     └── ContentView
             └── CameraView
                     ├── CameraPreviewView (uses CameraManager)

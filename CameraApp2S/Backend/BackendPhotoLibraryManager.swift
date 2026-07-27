@@ -1,6 +1,6 @@
 //
 //  PhotoLibraryManager.swift
-//  CameraApp2S
+//  Microscope Viewer Camera
 //
 //  Created by Nimalan Arulvelan on 3/15/26.
 //

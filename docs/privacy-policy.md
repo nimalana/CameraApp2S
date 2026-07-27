@@ -3,13 +3,13 @@ layout: default
 title: Privacy Policy
 ---
 
-# Privacy Policy for Microscope Camera
+# Privacy Policy for Microscope Viewer Camera
 
 **Last Updated: July 11, 2026**
 
 ## Overview
 
-Microscope Camera ("the App") is developed by Nimalan Arulvelan. This privacy policy explains how the App handles information when you use it, including if you use the App in France, Italy, or another country in the European Union or European Economic Area.
+Microscope Viewer Camera ("the App") is developed by Nimalan Arulvelan. This privacy policy explains how the App handles information when you use it, including if you use the App in France, Italy, or another country in the European Union or European Economic Area.
 
 ## Data Collection
 
