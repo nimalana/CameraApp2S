@@ -239,3 +239,7 @@ The public privacy policy is in `docs/privacy-policy.md`. It includes EU/EEA lan
 ## Credits
 Created for smartphone-based microscope systems
 Optimized for scientific and educational use
+
+## License
+
+This project is available under the [Mozilla Public License 2.0](../LICENSE.txt). The official app is free, and community use, contributions, and improvements are welcome.
