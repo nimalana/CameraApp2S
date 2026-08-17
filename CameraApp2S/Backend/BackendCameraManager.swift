@@ -68,6 +68,7 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var photoFormat: PhotoFormat = .jpeg
     @Published var showCaptureFlash = false
     @Published var lastSavedMediaDate = Date()
+    @Published var isRefocusing = false
     
     private var recordingTimer: Timer?
     
@@ -87,6 +88,9 @@ final class CameraManager: NSObject, ObservableObject {
     private var focusObservation: NSKeyValueObservation?
     private var exposureObservation: NSKeyValueObservation?
     private var lensPositionObservation: NSKeyValueObservation?
+    private var tapFocusObservation: NSKeyValueObservation?
+    private var tapExposureObservation: NSKeyValueObservation?
+    private var tapRefocusID = UUID()
     
     override init() {
         super.init()
@@ -567,6 +571,7 @@ final class CameraManager: NSObject, ObservableObject {
     
     func setFocusPoint(_ point: CGPoint) {
         guard let device = videoDevice else { return }
+        isRefocusing = true
         
         sessionQueue.async { [weak self] in
             do {
@@ -586,16 +591,83 @@ final class CameraManager: NSObject, ObservableObject {
                 device.isSubjectAreaChangeMonitoringEnabled = true
                 
                 device.unlockForConfiguration()
+
+                let focusSupported = device.isFocusPointOfInterestSupported
+                let exposureSupported = device.isExposurePointOfInterestSupported
                 
                 Task { @MainActor [weak self] in
-                    self?.focusMode = .autoFocus
-                    self?.isLocked = false
-                    self?.isAutoFocusEnabled = true
+                    guard let self else { return }
+                    self.watchTapRefocus(
+                        device: device,
+                        focusSupported: focusSupported,
+                        exposureSupported: exposureSupported
+                    )
+                    self.focusMode = .autoFocus
+                    self.isLocked = false
+                    self.isAutoFocusEnabled = true
                 }
             } catch {
                 print("Error setting focus point: \(error.localizedDescription)")
+                Task { @MainActor [weak self] in
+                    self?.isRefocusing = false
+                }
             }
         }
+    }
+
+    private func watchTapRefocus(device: AVCaptureDevice, focusSupported: Bool, exposureSupported: Bool) {
+        tapFocusObservation?.invalidate()
+        tapExposureObservation?.invalidate()
+        tapRefocusID = UUID()
+        let currentRefocusID = tapRefocusID
+
+        guard focusSupported || exposureSupported else {
+            isRefocusing = false
+            return
+        }
+
+        if focusSupported {
+            tapFocusObservation = device.observe(\.isAdjustingFocus, options: [.new]) { [weak self] _, change in
+                guard change.newValue == false else { return }
+                Task { @MainActor [weak self] in
+                    self?.finishTapRefocusIfSettled(device: device, id: currentRefocusID)
+                }
+            }
+        }
+
+        if exposureSupported {
+            tapExposureObservation = device.observe(\.isAdjustingExposure, options: [.new]) { [weak self] _, change in
+                guard change.newValue == false else { return }
+                Task { @MainActor [weak self] in
+                    self?.finishTapRefocusIfSettled(device: device, id: currentRefocusID)
+                }
+            }
+        }
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(900))
+            self?.finishTapRefocusIfSettled(device: device, id: currentRefocusID)
+        }
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard self?.tapRefocusID == currentRefocusID else { return }
+            self?.endTapRefocus()
+        }
+    }
+
+    private func finishTapRefocusIfSettled(device: AVCaptureDevice, id: UUID) {
+        guard tapRefocusID == id else { return }
+        guard !device.isAdjustingFocus, !device.isAdjustingExposure else { return }
+        endTapRefocus()
+    }
+
+    private func endTapRefocus() {
+        tapFocusObservation?.invalidate()
+        tapExposureObservation?.invalidate()
+        tapFocusObservation = nil
+        tapExposureObservation = nil
+        isRefocusing = false
     }
     
     /// Called when the subject area changes to return to continuous autofocus
@@ -765,7 +837,6 @@ final class CameraManager: NSObject, ObservableObject {
         // Trigger capture flash feedback
         showCaptureFlash = true
         
-        let quality = photoQuality
         let format = photoFormat
         let output = photoOutput // local copy to avoid capturing nonisolated(unsafe) property
         sessionQueue.async { [weak self] in

@@ -11,12 +11,14 @@ import AVFoundation
 /// UIKit wrapper for AVCaptureVideoPreviewLayer
 struct CameraPreviewView: UIViewRepresentable {
     let session: AVCaptureSession
+    let isRefocusing: Bool
     let onTap: (CGPoint) -> Void
     let onPinchZoom: (CGFloat) -> Void
     
     func makeUIView(context: Context) -> CameraPreviewUIView {
         let view = CameraPreviewUIView()
         view.session = session
+        view.isRefocusing = isRefocusing
         view.onTap = onTap
         view.onPinchZoom = onPinchZoom
         return view
@@ -24,6 +26,7 @@ struct CameraPreviewView: UIViewRepresentable {
     
     func updateUIView(_ uiView: CameraPreviewUIView, context: Context) {
         uiView.session = session
+        uiView.isRefocusing = isRefocusing
     }
 }
 
@@ -37,9 +40,20 @@ class CameraPreviewUIView: UIView {
     
     var onTap: ((CGPoint) -> Void)?
     var onPinchZoom: ((CGFloat) -> Void)?
+    var isRefocusing = false {
+        didSet {
+            guard isRefocusing != oldValue else { return }
+            if isRefocusing {
+                startFocusPulse()
+            } else {
+                removeFocusIndicator()
+            }
+        }
+    }
     
     /// Tracks the zoom factor at the start of a pinch gesture
     private var initialPinchZoom: CGFloat = 1.0
+    private var focusIndicator: CALayer?
     
     override class var layerClass: AnyClass {
         AVCaptureVideoPreviewLayer.self
@@ -77,10 +91,10 @@ class CameraPreviewUIView: UIView {
         // Convert to device coordinates (0,0 to 1,1)
         let devicePoint = previewLayer.captureDevicePointConverted(fromLayerPoint: location)
         
-        onTap?(devicePoint)
-        
         // Show focus indicator
         showFocusIndicator(at: location)
+
+        onTap?(devicePoint)
     }
     
     @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
@@ -99,7 +113,7 @@ class CameraPreviewUIView: UIView {
     
     private func showFocusIndicator(at point: CGPoint) {
         // Remove existing indicators
-        layer.sublayers?.filter { $0.name == "focusIndicator" }.forEach { $0.removeFromSuperlayer() }
+        removeFocusIndicator()
         
         let indicator = CALayer()
         indicator.name = "focusIndicator"
@@ -110,18 +124,35 @@ class CameraPreviewUIView: UIView {
         indicator.cornerRadius = 40
         
         layer.addSublayer(indicator)
+        focusIndicator = indicator
         
-        // Animate
+        // Animate into place, then pulse while the camera is still refocusing.
         let animation = CABasicAnimation(keyPath: "transform.scale")
         animation.fromValue = 1.5
         animation.toValue = 1.0
         animation.duration = 0.3
         
         indicator.add(animation, forKey: "scale")
-        
-        // Remove after 1 second
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            indicator.removeFromSuperlayer()
-        }
+        startFocusPulse()
+    }
+
+    private func startFocusPulse() {
+        guard let focusIndicator else { return }
+        guard focusIndicator.animation(forKey: "focusColorPulse") == nil else { return }
+
+        let pulse = CABasicAnimation(keyPath: "borderColor")
+        pulse.fromValue = UIColor.yellow.cgColor
+        pulse.toValue = UIColor.orange.cgColor
+        pulse.duration = 0.25
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        focusIndicator.add(pulse, forKey: "focusColorPulse")
+    }
+
+    private func removeFocusIndicator() {
+        focusIndicator?.removeAllAnimations()
+        focusIndicator?.removeFromSuperlayer()
+        focusIndicator = nil
+        layer.sublayers?.filter { $0.name == "focusIndicator" }.forEach { $0.removeFromSuperlayer() }
     }
 }

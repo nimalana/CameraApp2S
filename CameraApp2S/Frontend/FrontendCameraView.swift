@@ -23,6 +23,7 @@ struct CameraView: View {
             if cameraManager.isCameraReady {
                 CameraPreviewView(
                     session: cameraManager.getCaptureSession(),
+                    isRefocusing: cameraManager.isRefocusing,
                     onTap: { point in
                         // Tapping the screen re-enables autofocus at the tapped point
                         cameraManager.setFocusPoint(point)
@@ -226,7 +227,7 @@ struct CameraView: View {
                     }
                     
                     // Photo / Video mode toggle
-                    HStack(spacing: 32) {
+                    HStack(spacing: 8) {
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 cameraManager.isVideoMode = false
@@ -235,7 +236,9 @@ struct CameraView: View {
                             Text("PHOTO")
                                 .font(.system(size: 16, weight: cameraManager.isVideoMode ? .medium : .bold))
                                 .foregroundStyle(cameraManager.isVideoMode ? .white.opacity(0.5) : .yellow)
-                                .padding(.horizontal, 64)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 12)
                                 .padding(.vertical, 32)
                                 .contentShape(Rectangle())
                         }
@@ -248,7 +251,9 @@ struct CameraView: View {
                             Text("VIDEO")
                                 .font(.system(size: 16, weight: cameraManager.isVideoMode ? .bold : .medium))
                                 .foregroundStyle(cameraManager.isVideoMode ? .yellow : .white.opacity(0.5))
-                                .padding(.horizontal, 64)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 12)
                                 .padding(.vertical, 32)
                                 .contentShape(Rectangle())
                         }

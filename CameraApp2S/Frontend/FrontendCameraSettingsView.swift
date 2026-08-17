@@ -98,7 +98,7 @@ struct CameraSettingsView: View {
                 }
                 
                 Section("About") {
-                    LabeledContent("App Version", value: "1.0.0")
+                    LabeledContent("App Version", value: appVersion)
                     LabeledContent("Purpose", value: "Microscope Imaging")
                 }
 
@@ -117,7 +117,7 @@ struct CameraSettingsView: View {
                     }
 
                     Link(destination: URL(string: "https://www.instructables.com/A-Cheap-Way-to-Stabilize-a-Phone-Camera-for-Micros/")!) {
-                        Label("Low-cost phone camera stabilizer guide", systemImage: "link")
+                        Label("Low-cost phone camera stabilizer", systemImage: "link")
                     }
                 }
                 
@@ -148,6 +148,10 @@ struct CameraSettingsView: View {
                 }
             }
         }
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
     }
 }
 
