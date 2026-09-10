@@ -98,8 +98,10 @@ struct CameraView: View {
                     .allowsHitTesting(false)
             }
             
-            // Vertical focus slider on right edge — show for all rear cameras
-            if !cameraManager.isUsingFrontCamera {
+            // Only show manual focus when the selected camera supports setting
+            // a custom lens position. Some virtual Dual/Triple cameras support
+            // locked focus but not custom lens positions.
+            if !cameraManager.isUsingFrontCamera && cameraManager.supportsManualFocus {
                 HStack {
                     Spacer()
                     VStack(spacing: 6) {

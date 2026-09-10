@@ -62,6 +62,7 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var lensPosition: Float = 0.5
     @Published var isAutoFocusEnabled = true
     @Published var supportsFocus = true
+    @Published var supportsManualFocus = false
     @Published var isVideoMode = false
     @Published var recordingDuration: TimeInterval = 0
     @Published var photoQuality: PhotoQuality = .high
@@ -283,6 +284,7 @@ final class CameraManager: NSObject, ObservableObject {
                     let deviceSupportsFocus = videoDevice.isFocusModeSupported(.continuousAutoFocus) ||
                         videoDevice.isFocusModeSupported(.autoFocus) ||
                         videoDevice.isFocusModeSupported(.locked)
+                    let deviceSupportsManualFocus = videoDevice.isLockingFocusWithCustomLensPositionSupported
                     
                     Task { @MainActor [weak self] in
                         guard let self else { return }
@@ -292,6 +294,7 @@ final class CameraManager: NSObject, ObservableObject {
                         self.isUsingFrontCamera = videoDevice.position == .front
                         self.currentCameraName = CameraManager.displayName(for: videoDevice)
                         self.supportsFocus = deviceSupportsFocus
+                        self.supportsManualFocus = deviceSupportsManualFocus
                         self.isAutoFocusEnabled = deviceSupportsFocus
                         self.lensPosition = videoDevice.lensPosition
                         // Observe hardware lens position so the slider tracks autofocus
@@ -456,19 +459,25 @@ final class CameraManager: NSObject, ObservableObject {
     /// Returns the current lens position for the caller to sync its slider.
     func startManualFocus() -> Float {
         guard let device = videoDevice else { return lensPosition }
-        // Some lenses (e.g. fixed-focus ultra-wides on certain devices) don't
-        // support locked focus mode — calling setFocusModeLocked would crash.
-        guard device.isFocusModeSupported(.locked) else { return device.lensPosition }
+        // Supporting the `.locked` focus mode does not guarantee support for a
+        // caller-selected lens position. Virtual Dual/Triple cameras can expose
+        // locked focus without supporting this API, which raises an Objective-C
+        // exception rather than a catchable Swift error.
+        guard device.isLockingFocusWithCustomLensPositionSupported else {
+            return device.lensPosition
+        }
         
         let currentPos = device.lensPosition
         isAutoFocusEnabled = false
         lensPosition = currentPos
         
         sessionQueue.async {
+            guard device.isLockingFocusWithCustomLensPositionSupported else { return }
             do {
                 try device.lockForConfiguration()
+                defer { device.unlockForConfiguration() }
+                guard device.isLockingFocusWithCustomLensPositionSupported else { return }
                 device.setFocusModeLocked(lensPosition: currentPos)
-                device.unlockForConfiguration()
             } catch {
                 print("Error starting manual focus: \(error.localizedDescription)")
             }
@@ -481,15 +490,17 @@ final class CameraManager: NSObject, ObservableObject {
     /// Only works when autofocus is disabled.
     func setManualFocusPosition(_ position: Float) {
         guard let device = videoDevice, isCameraReady else { return }
-        guard device.isFocusModeSupported(.locked) else { return }
+        guard device.isLockingFocusWithCustomLensPositionSupported else { return }
         
         let clampedPosition = min(max(position, 0.0), 1.0)
         
         sessionQueue.async { [weak self] in
+            guard device.isLockingFocusWithCustomLensPositionSupported else { return }
             do {
                 try device.lockForConfiguration()
+                defer { device.unlockForConfiguration() }
+                guard device.isLockingFocusWithCustomLensPositionSupported else { return }
                 device.setFocusModeLocked(lensPosition: clampedPosition)
-                device.unlockForConfiguration()
                 
                 Task { @MainActor [weak self] in
                     self?.lensPosition = clampedPosition
@@ -504,10 +515,9 @@ final class CameraManager: NSObject, ObservableObject {
     /// Toggles autofocus on or off. When turning off, the lens stays at its current position.
     func setAutoFocus(_ enabled: Bool) {
         guard let device = videoDevice, supportsFocus else { return }
-        
-        isAutoFocusEnabled = enabled
-        
+
         if enabled {
+            isAutoFocusEnabled = true
             // Switch to continuous autofocus
             sessionQueue.async { [weak self] in
                 do {
@@ -528,13 +538,16 @@ final class CameraManager: NSObject, ObservableObject {
             }
         } else {
             // Lock focus at current position for manual slider control
-            guard device.isFocusModeSupported(.locked) else { return }
+            guard device.isLockingFocusWithCustomLensPositionSupported else { return }
+            isAutoFocusEnabled = false
             sessionQueue.async { [weak self] in
+                guard device.isLockingFocusWithCustomLensPositionSupported else { return }
                 do {
                     try device.lockForConfiguration()
+                    defer { device.unlockForConfiguration() }
+                    guard device.isLockingFocusWithCustomLensPositionSupported else { return }
                     let currentPos = device.lensPosition
                     device.setFocusModeLocked(lensPosition: currentPos)
-                    device.unlockForConfiguration()
                     
                     Task { @MainActor [weak self] in
                         self?.lensPosition = currentPos
